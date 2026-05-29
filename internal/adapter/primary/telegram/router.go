@@ -12,7 +12,7 @@ type Handlers struct {
 	Status *handler.Status
 	Ban    *handler.Ban
 	Unban  *handler.Unban
-	// List   *handler.List   // следующая итерация
+	List   *handler.List
 }
 
 // registerRoutes маппит команды Telegram на методы handler'ов.
@@ -22,4 +22,5 @@ func registerRoutes(bot *tele.Bot, h Handlers) {
 	bot.Handle("/start", h.Status.Handle) // алиас для удобства первого запуска
 	bot.Handle("/ban", h.Ban.Handle)
 	bot.Handle("/unban", h.Unban.Handle)
+	bot.Handle("/list", h.List.Handle)
 }

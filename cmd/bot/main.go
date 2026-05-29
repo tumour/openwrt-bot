@@ -8,6 +8,7 @@ import (
 
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram"
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/handler"
+	"github.com/tumour/openwrt-bot/internal/adapter/secondary/dhcp"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/nftables"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/system"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/ubus"
@@ -45,19 +46,23 @@ func run() error {
 
 	// 4. Secondary adapters (вниз по графу).
 	runner := system.NewExecRunner()
+	fileReader := system.NewOSFileReader()
 	ubusClient := ubus.NewClient(runner)
 	nftClient := nftables.NewClient(runner, "inet fw4", "banned_macs")
+	dhcpClient := dhcp.NewClient(fileReader, cfg.DhcpLeasesPath)
 
 	// 5. Use cases (выше). Каждый получает порты через конструктор.
 	getStatusUC := status.NewGetStatus(ubusClient)
 	banUC := device.NewBan(nftClient)
 	unbanUC := device.NewUnban(nftClient)
+	listUC := device.NewList(dhcpClient, nftClient)
 
 	// 6. Handlers (Primary). Принимают use cases.
 	handlers := telegram.Handlers{
 		Status: handler.NewStatus(getStatusUC),
 		Ban:    handler.NewBan(banUC),
 		Unban:  handler.NewUnban(unbanUC),
+		List:   handler.NewList(listUC),
 	}
 
 	// 7. Bot. Собирается из cfg, logger, handlers — больше ничего не нужно.

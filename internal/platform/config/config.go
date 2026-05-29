@@ -13,6 +13,7 @@ type Config struct {
 	BotToken       string  `env:"BOT_TOKEN,required"`
 	AllowedChatIDs []int64 `env:"ALLOWED_CHAT_IDS,required" envSeparator:","`
 	LogLevel       string  `env:"LOG_LEVEL" envDefault:"info"`
+	DhcpLeasesPath string  `env:"DHCP_LEASES_PATH" envDefault:"/tmp/dhcp.leases"`
 }
 
 // Load читает конфиг из ENV. Возвращает ошибку, если обязательные переменные пусты.
