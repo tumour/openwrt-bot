@@ -36,12 +36,14 @@
 - `GetStatus` подмешивает температуру **best-effort**: ошибка датчика (нет зоны / битый файл) НЕ роняет `/status`, `TempCelsius` остаётся 0, presenter строку скрывает.
 - presenter `/status` уже умел `*Temp:* X°C` при `>0` — правок не потребовал.
 
-## Следующее
-
 ### Итерация 6 — `/speedtest`
-- Новая фича: `app/network/`.
-- Порт `SpeedTestPort` + adapter через `iperf3 -c <server>` или `librespeed-cli`.
-- `handler/speedtest`, presenter с форматированием Mbps.
+- Новая фича `app/network/` — порт `SpeedTestPort` + DTO `SpeedResult` (download/upload Mbps, ping/jitter ms, server). Use case `RunSpeedTest`.
+- Инструмент: **librespeed-cli** (apk-пакет на OpenWrt, выбран против iperf3 — нулевая инфра, нет открытых портов; против speedtest-netperf — чистый `--json` вместо парсинга текста). Адаптер `adapter/secondary/librespeed` через общий `system.Runner`, парсит JSON-массив.
+- Сервер пиннуем через `SPEEDTEST_SERVER_ID` (пусто = авто; авто часто берёт далёкий сервер → заниженные цифры).
+- `handler/speedtest` — отдельный таймаут 90с (замер ~30-60с) + interim-сообщение «⏳ замеряю…» с последующим `Edit` результатом. `presenter/speedtest` — Mbps/ping/jitter/сервер.
+- **Нюанс маршрута**: замер с роутера идёт напрямую через ISP (TPROXY ловит только форвард LAN, не output роутера) → меряем домашний канал, не VPN.
+
+## Следующее
 
 ### Развёртывание на AX3200
 - Прошить роутер на OpenWrt 23.05+ (отдельная задача — гайд под AX3200 через USB-TTL/exploit).

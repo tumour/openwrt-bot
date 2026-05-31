@@ -18,6 +18,10 @@ type Config struct {
 	// платформах датчик CPU лежит в разных зонах (thermal_zone0/1/...); если на
 	// железе зоны нет вовсе — /status просто не покажет строку Temp (см. GetStatus).
 	ThermalZonePath string `env:"THERMAL_ZONE_PATH" envDefault:"/sys/class/thermal/thermal_zone0/temp"`
+	// SpeedTestServerID — ID сервера librespeed для /speedtest. Пусто → авто-выбор
+	// (librespeed нередко берёт далёкий сервер → заниженные цифры). Список ID:
+	// `librespeed-cli --list` на роутере.
+	SpeedTestServerID string `env:"SPEEDTEST_SERVER_ID" envDefault:""`
 }
 
 // Load читает конфиг из ENV. Возвращает ошибку, если обязательные переменные пусты.
