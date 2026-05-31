@@ -14,6 +14,10 @@ type Config struct {
 	AllowedChatIDs []int64 `env:"ALLOWED_CHAT_IDS,required" envSeparator:","`
 	LogLevel       string  `env:"LOG_LEVEL" envDefault:"info"`
 	DhcpLeasesPath string  `env:"DHCP_LEASES_PATH" envDefault:"/tmp/dhcp.leases"`
+	// ThermalZonePath — sysfs-файл с температурой CPU для /status. На разных
+	// платформах датчик CPU лежит в разных зонах (thermal_zone0/1/...); если на
+	// железе зоны нет вовсе — /status просто не покажет строку Temp (см. GetStatus).
+	ThermalZonePath string `env:"THERMAL_ZONE_PATH" envDefault:"/sys/class/thermal/thermal_zone0/temp"`
 }
 
 // Load читает конфиг из ENV. Возвращает ошибку, если обязательные переменные пусты.

@@ -55,7 +55,7 @@ func (c *Client) Snapshot(ctx context.Context) (status.Snapshot, error) {
 		LoadAvg1:   float64(info.Load[0]) / 65536.0,
 		LoadAvg5:   float64(info.Load[1]) / 65536.0,
 		LoadAvg15:  float64(info.Load[2]) / 65536.0,
-		// TempCelsius пока 0 — добавляется отдельным портом, читающим
-		// /sys/class/thermal/thermal_zone0/temp. В следующей итерации.
+		// TempCelsius здесь не заполняем — это зона ответственности ThermalPort
+		// (adapter/secondary/thermal), GetStatus подмешивает её к этому снапшоту.
 	}, nil
 }

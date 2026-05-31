@@ -5,16 +5,16 @@ import (
 	"fmt"
 )
 
-// GetStatus — use case "получить статус роутера". Тонкий use case (фактически
-// прокси к одному порту) — это нормально, главное чтобы он существовал отдельной
-// единицей: тогда добавить рядом валидацию / форматирование / кеширование можно
-// без правки adapter-кода.
+// GetStatus — use case "получить статус роутера". Оркестрирует два порта:
+// SystemPort (uptime/load/memory через ubus) и ThermalPort (температура из sysfs).
+// Держать их раздельно honest — у них разные источники данных; склейка живёт здесь.
 type GetStatus struct {
-	sys SystemPort
+	sys     SystemPort
+	thermal ThermalPort
 }
 
-func NewGetStatus(sys SystemPort) *GetStatus {
-	return &GetStatus{sys: sys}
+func NewGetStatus(sys SystemPort, thermal ThermalPort) *GetStatus {
+	return &GetStatus{sys: sys, thermal: thermal}
 }
 
 type (
@@ -28,6 +28,14 @@ func (uc *GetStatus) Execute(ctx context.Context, _ GetStatusInput) (GetStatusOu
 	s, err := uc.sys.Snapshot(ctx)
 	if err != nil {
 		return GetStatusOutput{}, fmt.Errorf("get system snapshot: %w", err)
+	}
+
+	// Температура — необязательное обогащение: датчика может не быть на этом железе
+	// (см. Snapshot.TempCelsius). Ошибку чтения сознательно НЕ пробрасываем — одна
+	// декоративная метрика не должна ронять весь /status. Нет температуры → остаётся
+	// 0, и presenter её скрывает.
+	if temp, err := uc.thermal.Temperature(ctx); err == nil {
+		s.TempCelsius = temp
 	}
 	return GetStatusOutput{Snapshot: s}, nil
 }

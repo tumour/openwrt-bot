@@ -11,6 +11,14 @@ type SystemPort interface {
 	Snapshot(ctx context.Context) (Snapshot, error)
 }
 
+// ThermalPort отдаёт температуру CPU роутера в градусах Цельсия. Отдельный порт,
+// а не поле SystemPort, потому что источник другой — sysfs-файл термозоны
+// (/sys/class/thermal/...), а не ubus. GetStatus оркестрирует оба порта, как
+// device.List оркестрирует DhcpPort + NftPort.
+type ThermalPort interface {
+	Temperature(ctx context.Context) (float64, error)
+}
+
 // Snapshot — мгновенный срез системных метрик. Живёт здесь, а не в domain/, потому
 // что "load average" / "температура" — это технические метрики хоста, а не часть
 // доменной модели "устройство в сети". Из таких метрик не выводятся доменные правила.

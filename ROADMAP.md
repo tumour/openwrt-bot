@@ -29,13 +29,14 @@
 - Use case `List` — orchestration двух портов (`DhcpPort` + `NftPort`).
 - `handler/list`, `presenter/list` — моноширинная таблица в Markdown.
 
-## Следующее
-
 ### Итерация 5 — температура
-- Reuse `FileReader` для чтения `/sys/class/thermal/thermal_zone0/temp`.
-- Расширить `status.SystemPort.Snapshot()` температурой (или отдельный `ThermalPort`?).
-- Обновить presenter `/status`: строка `*Temp:* X°C`.
-- Тесты.
+- Решение по вопросу из роадмапа: **отдельный `ThermalPort`**, не раздувание `SystemPort`. Источник другой (sysfs-файл, а не ubus), а `GetStatus` оркестрирует оба порта — ровно как `List` оркестрирует `DhcpPort` + `NftPort`.
+- `adapter/secondary/thermal/` — reuse `FileReader` для чтения `/sys/class/thermal/thermal_zone0/temp`. Чистая `parseMilliCelsius` (millidegree → °C) отделена от I/O.
+- Путь термозоны конфигурируем (`THERMAL_ZONE_PATH`, дефолт `thermal_zone0`) — у разного железа датчик CPU в разных зонах.
+- `GetStatus` подмешивает температуру **best-effort**: ошибка датчика (нет зоны / битый файл) НЕ роняет `/status`, `TempCelsius` остаётся 0, presenter строку скрывает.
+- presenter `/status` уже умел `*Temp:* X°C` при `>0` — правок не потребовал.
+
+## Следующее
 
 ### Итерация 6 — `/speedtest`
 - Новая фича: `app/network/`.

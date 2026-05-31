@@ -11,6 +11,7 @@ import (
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/dhcp"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/nftables"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/system"
+	"github.com/tumour/openwrt-bot/internal/adapter/secondary/thermal"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/ubus"
 	"github.com/tumour/openwrt-bot/internal/app/device"
 	"github.com/tumour/openwrt-bot/internal/app/status"
@@ -48,11 +49,12 @@ func run() error {
 	runner := system.NewExecRunner()
 	fileReader := system.NewOSFileReader()
 	ubusClient := ubus.NewClient(runner)
+	thermalClient := thermal.NewClient(fileReader, cfg.ThermalZonePath)
 	nftClient := nftables.NewClient(runner, "inet fw4", "banned_macs")
 	dhcpClient := dhcp.NewClient(fileReader, cfg.DhcpLeasesPath)
 
 	// 5. Use cases (выше). Каждый получает порты через конструктор.
-	getStatusUC := status.NewGetStatus(ubusClient)
+	getStatusUC := status.NewGetStatus(ubusClient, thermalClient)
 	banUC := device.NewBan(nftClient)
 	unbanUC := device.NewUnban(nftClient)
 	listUC := device.NewList(dhcpClient, nftClient)
