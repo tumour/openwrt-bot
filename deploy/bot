@@ -1,0 +1,40 @@
+#!/bin/sh
+# bot — тумблер Telegram-бота роутера (поверх procd-сервиса openwrt-bot).
+# По аналогии с `vpn on/off`. Бот ходит в Telegram через VPN-socks (10808),
+# поэтому `bot on` проверяет, поднят ли VPN.
+SVC=/etc/init.d/openwrt-bot
+SOCKS_PORT=10808
+
+vpn_socks_up() { netstat -lnt 2>/dev/null | grep -q "127.0.0.1:$SOCKS_PORT"; }
+is_running()   { ps w | grep -q "[h]ome-monitor"; }
+bot_pid()      { ps w | grep "[h]ome-monitor" | grep -v grep | awk '{print $1}' | head -1; }
+
+case "${1:-status}" in
+    on)
+        vpn_socks_up || echo "⚠ VPN-socks ($SOCKS_PORT) не слушает — сначала 'vpn on', иначе бот не достучится до Telegram"
+        "$SVC" start
+        sleep 2
+        if is_running; then echo "✓ bot ON (pid $(bot_pid))"
+        else echo "✗ бот не поднялся — смотри: bot log"; fi
+        ;;
+    off)
+        "$SVC" stop
+        sleep 1
+        if is_running; then echo "✗ бот ещё жив (повтори bot off)"; else echo "✓ bot OFF"; fi
+        ;;
+    restart)
+        "$SVC" restart >/dev/null 2>&1; sleep 2
+        is_running && echo "✓ bot restart (pid $(bot_pid))" || echo "✗ не поднялся — bot log"
+        ;;
+    status)
+        echo "бот:           $(is_running && echo "running (pid $(bot_pid))" || echo stopped)"
+        echo "VPN-socks $SOCKS_PORT: $(vpn_socks_up && echo "слушает ✓" || echo "НЕТ — нужен 'vpn on'")"
+        echo "последняя активность:"
+        logread 2>/dev/null | grep home-monitor | tail -1 | sed 's/^/  /' || echo "  (лога нет)"
+        ;;
+    log)
+        logread 2>/dev/null | grep home-monitor | tail -20
+        ;;
+    *)
+        echo "usage: bot {on|off|restart|status|log}" >&2; exit 1 ;;
+esac
