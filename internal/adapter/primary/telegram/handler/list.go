@@ -24,5 +24,5 @@ func (h *List) Handle(c tele.Context) error {
 	if err != nil {
 		return c.Send("⚠ " + err.Error())
 	}
-	return c.Send(presenter.DeviceList(out.Devices), tele.ModeMarkdown)
+	return c.Send(presenter.DeviceList(out.Devices), tele.ModeHTML)
 }
