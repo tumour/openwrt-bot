@@ -43,6 +43,13 @@ func NewBot(cfg Config, logger *slog.Logger, h Handlers) (*Bot, error) {
 
 	registerRoutes(tb, h)
 
+	// Нативное меню команд Telegram (кнопка ≡ у поля ввода + автодополнение по «/»).
+	// Некритично: если API недоступен в момент старта — бот работает и без меню,
+	// поэтому ошибку логируем, но не валим запуск.
+	if err := tb.SetCommands(menuCommands(h)); err != nil {
+		logger.Warn("не удалось установить меню команд Telegram", "err", err)
+	}
+
 	return &Bot{bot: tb, logger: logger}, nil
 }
 
