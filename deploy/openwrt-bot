@@ -12,13 +12,23 @@ ENV_FILE=/etc/openwrt-bot.env
 NFT_TABLE="inet fw4"
 NFT_SET="banned_macs"
 
-# Idempotent bootstrap nftables: set + drop-правило. Без fw4 reload —
-# `nft add` вставляет в существующую таблицу, не пересобирает firewall.
+# Idempotent bootstrap nftables. Без fw4 reload — `nft add` вставляет в
+# существующую таблицу, не пересобирает firewall. Всё runtime: reboot чистит,
+# при следующем `bot on` пересоздаётся заново (set придёт пустым).
 ensure_nft() {
     nft list set $NFT_TABLE $NFT_SET >/dev/null 2>&1 || \
         nft add set $NFT_TABLE $NFT_SET '{ type ether_addr; }'
+    # Drop в forward — срабатывает когда LAN-wide VPN выключен.
     nft list chain $NFT_TABLE forward 2>/dev/null | grep -q "@$NFT_SET" || \
         nft add rule $NFT_TABLE forward ether saddr @$NFT_SET drop
+    # Drop в prerouting ДО TPROXY. При включённом VPN (таблица ip xray) LAN-трафик
+    # заворачивается в xray в prerouting (priority mangle = -150) раньше forward —
+    # forward-drop в обход. Своя base-цепочка с priority mangle-10 (= -160) ловит
+    # забаненный MAC раньше TPROXY, поэтому бан работает и с VPN, и без.
+    nft list chain $NFT_TABLE ban_prerouting >/dev/null 2>&1 || \
+        nft add chain $NFT_TABLE ban_prerouting '{ type filter hook prerouting priority mangle - 10 ; policy accept ; }'
+    nft list chain $NFT_TABLE ban_prerouting 2>/dev/null | grep -q "@$NFT_SET" || \
+        nft add rule $NFT_TABLE ban_prerouting ether saddr @$NFT_SET drop
 }
 
 start_service() {
