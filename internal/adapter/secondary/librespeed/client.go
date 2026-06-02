@@ -5,7 +5,9 @@ package librespeed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os/exec"
 
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/system"
 	"github.com/tumour/openwrt-bot/internal/app/network"
@@ -44,6 +46,11 @@ func (c *Client) Measure(ctx context.Context) (network.SpeedResult, error) {
 
 	out, err := c.runner.Run(ctx, "librespeed-cli", args...)
 	if err != nil {
+		// Бинаря нет на роутере — даём действенную подсказку вместо сырого
+		// "executable file not found in $PATH".
+		if errors.Is(err, exec.ErrNotFound) {
+			return network.SpeedResult{}, fmt.Errorf("librespeed-cli не установлен на роутере — поставь: apk add librespeed-cli")
+		}
 		return network.SpeedResult{}, fmt.Errorf("run librespeed-cli: %w", err)
 	}
 

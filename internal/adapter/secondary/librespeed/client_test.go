@@ -3,6 +3,8 @@ package librespeed
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -69,6 +71,19 @@ func TestClient_Measure_RunnerError(t *testing.T) {
 	}
 	if !errors.Is(err, runErr) {
 		t.Errorf("error should wrap runner error; got %v", err)
+	}
+}
+
+func TestClient_Measure_BinaryMissing(t *testing.T) {
+	// librespeed-cli не установлен: ошибка оборачивает exec.ErrNotFound.
+	c := NewClient(&fakeRunner{err: fmt.Errorf("librespeed-cli: %w", exec.ErrNotFound)}, "")
+
+	_, err := c.Measure(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "apk add librespeed-cli") {
+		t.Errorf("ожидалась подсказка про установку, got: %v", err)
 	}
 }
 
