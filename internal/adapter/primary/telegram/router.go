@@ -12,7 +12,7 @@ type Handlers struct {
 	Status    *handler.Status
 	Ban       *handler.Ban
 	Unban     *handler.Unban
-	List      *handler.List
+	Devices   *handler.Devices // /list + callback-кнопки карточек
 	SpeedTest *handler.SpeedTest
 	VPNOff    *handler.VPNOff
 	VPNOn     *handler.VPNOn
@@ -34,7 +34,7 @@ type command struct {
 func commands(h Handlers) []command {
 	return []command{
 		{"status", "Статус роутера: uptime, нагрузка, память, температура", h.Status.Handle, true},
-		{"list", "Устройства в сети и баны", h.List.Handle, true},
+		{"list", "Устройства в сети: бан и VPN по кнопкам", h.Devices.HandleList, true},
 		{"speedtest", "Замер скорости интернет-канала", h.SpeedTest.Handle, true},
 		{"ban", "Забанить устройство: /ban AA:BB:CC:DD:EE:FF", h.Ban.Handle, true},
 		{"unban", "Разбанить устройство: /unban AA:BB:CC:DD:EE:FF", h.Unban.Handle, true},
@@ -44,11 +44,13 @@ func commands(h Handlers) []command {
 	}
 }
 
-// registerRoutes маппит команды Telegram на handler'ы.
+// registerRoutes маппит команды Telegram на handler'ы и вешает
+// callback-обработчики inline-кнопок (карточки устройств).
 func registerRoutes(bot *tele.Bot, h Handlers) {
 	for _, c := range commands(h) {
 		bot.Handle("/"+c.name, c.handle)
 	}
+	h.Devices.RegisterCallbacks(bot)
 }
 
 // menuCommands — пункты для нативного меню Telegram (кнопка ≡ + автодополнение).

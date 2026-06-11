@@ -74,7 +74,7 @@ func run() error {
 		Status:    handler.NewStatus(getStatusUC),
 		Ban:       handler.NewBan(banUC),
 		Unban:     handler.NewUnban(unbanUC),
-		List:      handler.NewList(listUC),
+		Devices:   handler.NewDevices(listUC, banUC, unbanUC, vpnOffUC, vpnOnUC),
 		SpeedTest: handler.NewSpeedTest(speedTestUC),
 		VPNOff:    handler.NewVPNOff(vpnOffUC),
 		VPNOn:     handler.NewVPNOn(vpnOnUC),
