@@ -31,25 +31,62 @@ type command struct {
 // commands — все команды бота. Порядок = порядок в меню Telegram.
 // Единственное место, где меняем при добавлении команды: одна строка — и маршрут,
 // и пункт меню подхватятся автоматически.
+//
+// MAC-команды (ban/unban/vpnoff/vpnon) из меню убраны (inMenu:false): тот же
+// функционал доступен кнопками в карточках /list, а руками их набирают редко.
+// Сами команды работают, если ввести текстом.
 func commands(h Handlers) []command {
 	return []command{
-		{"status", "Статус роутера: uptime, нагрузка, память, температура", h.Status.Handle, true},
 		{"list", "Устройства в сети: бан и VPN по кнопкам", h.Devices.HandleList, true},
+		{"status", "Статус роутера: uptime, нагрузка, память, температура", h.Status.Handle, true},
 		{"speedtest", "Замер скорости интернет-канала", h.SpeedTest.Handle, true},
-		{"ban", "Забанить устройство: /ban AA:BB:CC:DD:EE:FF", h.Ban.Handle, true},
-		{"unban", "Разбанить устройство: /unban AA:BB:CC:DD:EE:FF", h.Unban.Handle, true},
-		{"vpnoff", "Пустить устройство мимо VPN: /vpnoff AA:BB:CC:DD:EE:FF", h.VPNOff.Handle, true},
-		{"vpnon", "Вернуть устройство в VPN: /vpnon AA:BB:CC:DD:EE:FF", h.VPNOn.Handle, true},
-		{"start", "Запуск и статус роутера", h.Status.Handle, false}, // алиас /status, в меню не нужен
+		{"ban", "Забанить устройство: /ban AA:BB:CC:DD:EE:FF", h.Ban.Handle, false},
+		{"unban", "Разбанить устройство: /unban AA:BB:CC:DD:EE:FF", h.Unban.Handle, false},
+		{"vpnoff", "Пустить устройство мимо VPN: /vpnoff AA:BB:CC:DD:EE:FF", h.VPNOff.Handle, false},
+		{"vpnon", "Вернуть устройство в VPN: /vpnon AA:BB:CC:DD:EE:FF", h.VPNOn.Handle, false},
+		{"start", "Привет + клавиатура управления", startHandler(h), false},
 	}
 }
 
-// registerRoutes маппит команды Telegram на handler'ы и вешает
-// callback-обработчики inline-кнопок (карточки устройств).
+// Кнопки постоянной reply-клавиатуры (живёт под полем ввода, видна всегда —
+// в отличие от нативного меню, зарытого в «≡»). Текст кнопки = endpoint:
+// telebot матчит входящее сообщение по точному тексту.
+var (
+	btnDevices   = tele.Btn{Text: "📱 Устройства"}
+	btnStatus    = tele.Btn{Text: "📊 Статус"}
+	btnSpeedTest = tele.Btn{Text: "🚀 Спидтест"}
+)
+
+// mainKeyboard — постоянная клавиатура управления. ResizeKeyboard — компактные
+// кнопки по высоте текста, OneTimeKeyboard НЕ ставим: клавиатура должна жить.
+func mainKeyboard() *tele.ReplyMarkup {
+	m := &tele.ReplyMarkup{ResizeKeyboard: true}
+	m.Reply(
+		m.Row(btnDevices),
+		m.Row(btnStatus, btnSpeedTest),
+	)
+	return m
+}
+
+// startHandler — /start: приветствие + установка постоянной клавиатуры.
+func startHandler(h Handlers) tele.HandlerFunc {
+	return func(c tele.Context) error {
+		return c.Send(
+			"Роутер на связи 🛜\n\n"+
+				"Управление — кнопками внизу. Бан и VPN per-device — в карточках устройств (📱 Устройства).",
+			mainKeyboard())
+	}
+}
+
+// registerRoutes маппит команды Telegram на handler'ы, вешает кнопки
+// постоянной клавиатуры и callback'и inline-кнопок (карточки устройств).
 func registerRoutes(bot *tele.Bot, h Handlers) {
 	for _, c := range commands(h) {
 		bot.Handle("/"+c.name, c.handle)
 	}
+	bot.Handle(&btnDevices, h.Devices.HandleList)
+	bot.Handle(&btnStatus, h.Status.Handle)
+	bot.Handle(&btnSpeedTest, h.SpeedTest.Handle)
 	h.Devices.RegisterCallbacks(bot)
 }
 

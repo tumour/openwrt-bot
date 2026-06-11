@@ -11,9 +11,11 @@ func TestMenuCommands_Valid(t *testing.T) {
 	if len(menu) == 0 {
 		t.Fatal("меню команд пустое")
 	}
+	// MAC-команды спрятаны из меню (функционал — в карточках /list).
+	hidden := map[string]bool{"start": true, "ban": true, "unban": true, "vpnoff": true, "vpnon": true}
 	for _, c := range menu {
-		if c.Text == "start" {
-			t.Error("/start — алиас, не должен попадать в меню")
+		if hidden[c.Text] {
+			t.Errorf("/%s не должен попадать в меню", c.Text)
 		}
 		// Имя: 1-32 символа, только [a-z0-9_].
 		if n := len(c.Text); n < 1 || n > 32 {
