@@ -20,9 +20,16 @@ func DeviceList(views []device.View) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "<b>Устройства в LAN (%d):</b>\n", len(views))
 	for _, v := range views {
+		// Приоритет пометок: бан перекрывает vpn-обход (забаненный дропается
+		// в prerouting раньше, чем сработает метка обхода).
 		icon := "📱"
-		if v.Banned {
+		suffix := ""
+		switch {
+		case v.Banned:
 			icon = "🚫"
+		case v.Direct:
+			icon = "🌐"
+			suffix = " · без VPN"
 		}
 		host := v.Device.Hostname
 		if host == "" {
@@ -33,8 +40,8 @@ func DeviceList(views []device.View) string {
 			ip = v.Device.IP.String()
 		}
 		// Имя/IP экранируем (вдруг в hostname есть <>&), MAC — для единообразия.
-		fmt.Fprintf(&b, "\n%s %s · %s\n<code>%s</code>\n",
-			icon, html.EscapeString(host), html.EscapeString(ip), html.EscapeString(v.Device.MAC.String()))
+		fmt.Fprintf(&b, "\n%s %s · %s%s\n<code>%s</code>\n",
+			icon, html.EscapeString(host), html.EscapeString(ip), suffix, html.EscapeString(v.Device.MAC.String()))
 	}
 	return b.String()
 }

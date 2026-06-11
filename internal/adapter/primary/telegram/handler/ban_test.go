@@ -26,12 +26,12 @@ func (f *fakeCtx) Send(what interface{}, _ ...interface{}) error {
 	return nil
 }
 
-// stubNft — стаб device.NftPort: Ban-хендлеру нужен только AddBanned.
+// stubNft — стаб device.MACSetPort: Ban-хендлеру нужен только Add.
 type stubNft struct{ addErr error }
 
-func (s *stubNft) AddBanned(context.Context, domain.MAC) error    { return s.addErr }
-func (s *stubNft) RemoveBanned(context.Context, domain.MAC) error { return nil }
-func (s *stubNft) ListBanned(context.Context) ([]domain.MAC, error) {
+func (s *stubNft) Add(context.Context, domain.MAC) error    { return s.addErr }
+func (s *stubNft) Remove(context.Context, domain.MAC) error { return nil }
+func (s *stubNft) List(context.Context) ([]domain.MAC, error) {
 	return nil, nil
 }
 

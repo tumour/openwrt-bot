@@ -1,6 +1,7 @@
-// Package nftables — реализация device.NftPort через утилиту `nft` (OpenWrt fw4).
-// Adapter работает только с одним сетом MAC-адресов, в который смотрит drop-правило
-// `drop ether saddr @banned_macs` (создаётся при bootstrap'е роутера, не ботом).
+// Package nftables — реализация device.MACSetPort через утилиту `nft` (OpenWrt fw4).
+// Каждый Client работает с одним сетом MAC-адресов; правила, которые на сет
+// смотрят (drop для banned_macs, mark 0xff для vpn_direct_macs), создаёт
+// bootstrap в init.d, не бот.
 package nftables
 
 import (
@@ -27,37 +28,37 @@ func NewClient(runner system.Runner, table, set string) *Client {
 	return &Client{runner: runner, table: table, set: set}
 }
 
-// AddBanned добавляет MAC в сет. Если уже есть — возвращает domain.ErrAlreadyBanned
+// Add добавляет MAC в сет. Если уже есть — возвращает domain.ErrAlreadyInSet
 // (распознаётся по тексту stderr). Это позволяет use case'у различать классы ошибок.
-func (c *Client) AddBanned(ctx context.Context, mac domain.MAC) error {
+func (c *Client) Add(ctx context.Context, mac domain.MAC) error {
 	_, err := c.runner.Run(ctx, "nft", "add", "element", c.table, c.set,
 		fmt.Sprintf("{ %s }", mac))
 	if err != nil {
 		if isAlreadyExists(err) {
-			return fmt.Errorf("%s: %w", mac, domain.ErrAlreadyBanned)
+			return fmt.Errorf("%s: %w", mac, domain.ErrAlreadyInSet)
 		}
 		return fmt.Errorf("nft add element: %w", err)
 	}
 	return nil
 }
 
-// RemoveBanned удаляет MAC из сета. Если не было — domain.ErrNotBanned.
-func (c *Client) RemoveBanned(ctx context.Context, mac domain.MAC) error {
+// Remove удаляет MAC из сета. Если не было — domain.ErrNotInSet.
+func (c *Client) Remove(ctx context.Context, mac domain.MAC) error {
 	_, err := c.runner.Run(ctx, "nft", "delete", "element", c.table, c.set,
 		fmt.Sprintf("{ %s }", mac))
 	if err != nil {
 		if isNotFound(err) {
-			return fmt.Errorf("%s: %w", mac, domain.ErrNotBanned)
+			return fmt.Errorf("%s: %w", mac, domain.ErrNotInSet)
 		}
 		return fmt.Errorf("nft delete element: %w", err)
 	}
 	return nil
 }
 
-// ListBanned читает сет и возвращает список MAC. Парсит человеко-читаемый вывод
+// List читает сет и возвращает список MAC. Парсит человеко-читаемый вывод
 // `nft list set` — JSON-режим `nft -j` мог бы быть удобнее, но не во всех версиях
 // nftables на OpenWrt он стабилен, поэтому держим текстовый.
-func (c *Client) ListBanned(ctx context.Context) ([]domain.MAC, error) {
+func (c *Client) List(ctx context.Context) ([]domain.MAC, error) {
 	out, err := c.runner.Run(ctx, "nft", "list", "set", c.table, c.set)
 	if err != nil {
 		return nil, fmt.Errorf("nft list set: %w", err)

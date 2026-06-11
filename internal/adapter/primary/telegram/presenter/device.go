@@ -16,3 +16,13 @@ func Banned(mac domain.MAC) string {
 func Unbanned(mac domain.MAC) string {
 	return fmt.Sprintf("🟢 устройство `%s` разбанено", mac)
 }
+
+// VPNOff/VPNOn — подтверждения vpn-обхода. Как и с баном, no-op на повторе
+// даёт то же сообщение — для юзера состояние одинаковое.
+func VPNOff(mac domain.MAC) string {
+	return fmt.Sprintf("🌐 устройство `%s` ходит напрямую, без VPN", mac)
+}
+
+func VPNOn(mac domain.MAC) string {
+	return fmt.Sprintf("🔒 устройство `%s` снова через VPN", mac)
+}

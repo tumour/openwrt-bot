@@ -10,11 +10,11 @@ import (
 
 // Ban — use case "забанить устройство по MAC".
 type Ban struct {
-	nft NftPort
+	banned MACSetPort
 }
 
-func NewBan(nft NftPort) *Ban {
-	return &Ban{nft: nft}
+func NewBan(banned MACSetPort) *Ban {
+	return &Ban{banned: banned}
 }
 
 type (
@@ -27,8 +27,8 @@ type (
 // Execute — application rule: повторный бан уже забаненного MAC = no-op (не ошибка
 // для вызывающего). Это решение workflow-уровня, потому в app/, не в domain/.
 func (uc *Ban) Execute(ctx context.Context, in BanInput) (BanOutput, error) {
-	if err := uc.nft.AddBanned(ctx, in.MAC); err != nil {
-		if errors.Is(err, domain.ErrAlreadyBanned) {
+	if err := uc.banned.Add(ctx, in.MAC); err != nil {
+		if errors.Is(err, domain.ErrAlreadyInSet) {
 			return BanOutput{}, nil
 		}
 		return BanOutput{}, fmt.Errorf("ban %s: %w", in.MAC, err)

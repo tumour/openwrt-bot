@@ -52,16 +52,22 @@ func run() error {
 	fileReader := system.NewOSFileReader()
 	ubusClient := ubus.NewClient(runner)
 	thermalClient := thermal.NewClient(fileReader, cfg.ThermalZonePath)
-	nftClient := nftables.NewClient(runner, "inet fw4", "banned_macs")
+	// Два nft-сета на одной таблице: бан-лист и vpn-обход. Правила, смотрящие
+	// на сеты (drop / mark 0xff), создаёт bootstrap в init.d, бот управляет
+	// только элементами.
+	nftBanned := nftables.NewClient(runner, "inet fw4", "banned_macs")
+	nftDirect := nftables.NewClient(runner, "inet fw4", "vpn_direct_macs")
 	dhcpClient := dhcp.NewClient(fileReader, cfg.DhcpLeasesPath)
 	speedClient := librespeed.NewClient(runner, cfg.SpeedTestServerID)
 
 	// 5. Use cases (выше). Каждый получает порты через конструктор.
 	getStatusUC := status.NewGetStatus(ubusClient, thermalClient)
-	banUC := device.NewBan(nftClient)
-	unbanUC := device.NewUnban(nftClient)
-	listUC := device.NewList(dhcpClient, nftClient)
+	banUC := device.NewBan(nftBanned)
+	unbanUC := device.NewUnban(nftBanned)
+	listUC := device.NewList(dhcpClient, nftBanned, nftDirect)
 	speedTestUC := network.NewRunSpeedTest(speedClient)
+	vpnOffUC := device.NewDisableVPN(nftDirect)
+	vpnOnUC := device.NewEnableVPN(nftDirect)
 
 	// 6. Handlers (Primary). Принимают use cases.
 	handlers := telegram.Handlers{
@@ -70,6 +76,8 @@ func run() error {
 		Unban:     handler.NewUnban(unbanUC),
 		List:      handler.NewList(listUC),
 		SpeedTest: handler.NewSpeedTest(speedTestUC),
+		VPNOff:    handler.NewVPNOff(vpnOffUC),
+		VPNOn:     handler.NewVPNOn(vpnOnUC),
 	}
 
 	// 7. Bot. Собирается из cfg, logger, handlers — больше ничего не нужно.

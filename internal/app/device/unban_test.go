@@ -16,13 +16,13 @@ type stubNftRemove struct {
 	gotRemoveMAC domain.MAC
 }
 
-func (s *stubNftRemove) AddBanned(_ context.Context, _ domain.MAC) error { return nil }
-func (s *stubNftRemove) RemoveBanned(_ context.Context, mac domain.MAC) error {
+func (s *stubNftRemove) Add(_ context.Context, _ domain.MAC) error { return nil }
+func (s *stubNftRemove) Remove(_ context.Context, mac domain.MAC) error {
 	s.removeCalled++
 	s.gotRemoveMAC = mac
 	return s.removeErr
 }
-func (s *stubNftRemove) ListBanned(_ context.Context) ([]domain.MAC, error) { return nil, nil }
+func (s *stubNftRemove) List(_ context.Context) ([]domain.MAC, error) { return nil, nil }
 
 func TestUnban_Execute_OK(t *testing.T) {
 	port := &stubNftRemove{}
@@ -39,13 +39,13 @@ func TestUnban_Execute_OK(t *testing.T) {
 }
 
 func TestUnban_Execute_NotBanned_IsNoOp(t *testing.T) {
-	port := &stubNftRemove{removeErr: domain.ErrNotBanned}
+	port := &stubNftRemove{removeErr: domain.ErrNotInSet}
 	uc := NewUnban(port)
 	mac, _ := domain.NewMAC("aa:bb:cc:11:22:33")
 
 	_, err := uc.Execute(context.Background(), UnbanInput{MAC: mac})
 	if err != nil {
-		t.Errorf("ErrNotBanned should be swallowed; got: %v", err)
+		t.Errorf("ErrNotInSet should be swallowed; got: %v", err)
 	}
 }
 

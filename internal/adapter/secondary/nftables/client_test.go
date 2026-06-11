@@ -29,12 +29,12 @@ const (
 	testSet   = "banned_macs"
 )
 
-func TestAddBanned_OK(t *testing.T) {
+func TestAdd_OK(t *testing.T) {
 	fr := &fakeRunner{}
 	c := NewClient(fr, testTable, testSet)
 	mac, _ := domain.NewMAC("aa:bb:cc:11:22:33")
 
-	if err := c.AddBanned(context.Background(), mac); err != nil {
+	if err := c.Add(context.Background(), mac); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	wantArgs := []string{"add", "element", "inet fw4", "banned_macs", "{ aa:bb:cc:11:22:33 }"}
@@ -43,29 +43,29 @@ func TestAddBanned_OK(t *testing.T) {
 	}
 }
 
-func TestAddBanned_AlreadyExists(t *testing.T) {
+func TestAdd_AlreadyExists(t *testing.T) {
 	fr := &fakeRunner{err: errors.New("nft: element already exists")}
 	c := NewClient(fr, testTable, testSet)
 	mac, _ := domain.NewMAC("aa:bb:cc:11:22:33")
 
-	err := c.AddBanned(context.Background(), mac)
-	if err == nil || !errors.Is(err, domain.ErrAlreadyBanned) {
-		t.Fatalf("expected ErrAlreadyBanned, got: %v", err)
+	err := c.Add(context.Background(), mac)
+	if err == nil || !errors.Is(err, domain.ErrAlreadyInSet) {
+		t.Fatalf("expected ErrAlreadyInSet, got: %v", err)
 	}
 }
 
-func TestRemoveBanned_NotFound(t *testing.T) {
+func TestRemove_NotFound(t *testing.T) {
 	fr := &fakeRunner{err: errors.New("nft: No such file or directory")}
 	c := NewClient(fr, testTable, testSet)
 	mac, _ := domain.NewMAC("aa:bb:cc:11:22:33")
 
-	err := c.RemoveBanned(context.Background(), mac)
-	if err == nil || !errors.Is(err, domain.ErrNotBanned) {
-		t.Fatalf("expected ErrNotBanned, got: %v", err)
+	err := c.Remove(context.Background(), mac)
+	if err == nil || !errors.Is(err, domain.ErrNotInSet) {
+		t.Fatalf("expected ErrNotInSet, got: %v", err)
 	}
 }
 
-func TestListBanned_Parse(t *testing.T) {
+func TestList_Parse(t *testing.T) {
 	// Реальный фрагмент `nft list set inet fw4 banned_macs`.
 	stub := []byte(`table inet fw4 {
 	set banned_macs {
@@ -76,7 +76,7 @@ func TestListBanned_Parse(t *testing.T) {
 	fr := &fakeRunner{out: stub}
 	c := NewClient(fr, testTable, testSet)
 
-	got, err := c.ListBanned(context.Background())
+	got, err := c.List(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestListBanned_Parse(t *testing.T) {
 	}
 }
 
-func TestListBanned_Empty(t *testing.T) {
+func TestList_Empty(t *testing.T) {
 	stub := []byte(`table inet fw4 {
 	set banned_macs {
 		type ether_addr
@@ -98,7 +98,7 @@ func TestListBanned_Empty(t *testing.T) {
 	fr := &fakeRunner{out: stub}
 	c := NewClient(fr, testTable, testSet)
 
-	got, err := c.ListBanned(context.Background())
+	got, err := c.List(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

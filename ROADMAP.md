@@ -55,6 +55,13 @@
 - Нюанс: dropbear на OpenWrt без sftp-server → scp с флагом `-O` (легаси-протокол).
 - env на роутере (`/etc/openwrt-bot.env`) переименован под `ALLOWED_USER_IDS` (2026-06-11).
 
+### Итерация 7 — /vpnoff, /vpnon (vpn-обход per-device)
+- Идея: xray-цепочка `ip xray prerouting` пропускает пакеты с меткой 0xff (`meta mark 0xff return` — его же анти-петля). Наша цепочка `ban_prerouting` (priority -160) срабатывает раньше xray (-150) → метим трафик выбранных MAC, и устройство ходит напрямую через ISP.
+- Сет `vpn_direct_macs` в `inet fw4` (bootstrap в init.d, как banned_macs) — переживает `vpn off/on`, чистится ребутом. Таблица `ip xray` и репо openwrt-vpn не тронуты.
+- Рефакторинг: `NftPort` → generic `MACSetPort` (Add/Remove/List), доменные ошибки `ErrAlreadyInSet`/`ErrNotInSet`; nftables.Client один, экземпляра два (banned + direct). Use cases `DisableVPN`/`EnableVPN` — копия паттерна Ban/Unban с no-op на повторе.
+- `/list` помечает обходящие устройства: 🌐 + «без VPN». Бан сильнее обхода (drop стоит в цепочке первым).
+- Нюанс: DNS у «прямого» устройства при включённом VPN остаётся через xray DoH (dnsmasq общий на LAN) — трафик прямой, резолв честный. IPv6 при VPN on глушится для всего LAN, обходное устройство живёт на v4.
+
 ## Следующее
 
 ### Дальше (когда понадобится)

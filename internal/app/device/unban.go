@@ -10,11 +10,11 @@ import (
 
 // Unban — use case "разбанить устройство".
 type Unban struct {
-	nft NftPort
+	banned MACSetPort
 }
 
-func NewUnban(nft NftPort) *Unban {
-	return &Unban{nft: nft}
+func NewUnban(banned MACSetPort) *Unban {
+	return &Unban{banned: banned}
 }
 
 type (
@@ -25,8 +25,8 @@ type (
 )
 
 func (uc *Unban) Execute(ctx context.Context, in UnbanInput) (UnbanOutput, error) {
-	if err := uc.nft.RemoveBanned(ctx, in.MAC); err != nil {
-		if errors.Is(err, domain.ErrNotBanned) {
+	if err := uc.banned.Remove(ctx, in.MAC); err != nil {
+		if errors.Is(err, domain.ErrNotInSet) {
 			return UnbanOutput{}, nil
 		}
 		return UnbanOutput{}, fmt.Errorf("unban %s: %w", in.MAC, err)

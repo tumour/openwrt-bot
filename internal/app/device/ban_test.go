@@ -16,13 +16,13 @@ type stubNftPort struct {
 	gotAddMAC domain.MAC
 }
 
-func (s *stubNftPort) AddBanned(_ context.Context, mac domain.MAC) error {
+func (s *stubNftPort) Add(_ context.Context, mac domain.MAC) error {
 	s.addCalled++
 	s.gotAddMAC = mac
 	return s.addErr
 }
-func (s *stubNftPort) RemoveBanned(_ context.Context, _ domain.MAC) error { return nil }
-func (s *stubNftPort) ListBanned(_ context.Context) ([]domain.MAC, error) { return nil, nil }
+func (s *stubNftPort) Remove(_ context.Context, _ domain.MAC) error { return nil }
+func (s *stubNftPort) List(_ context.Context) ([]domain.MAC, error) { return nil, nil }
 
 func TestBan_Execute_OK(t *testing.T) {
 	port := &stubNftPort{}
@@ -41,13 +41,13 @@ func TestBan_Execute_OK(t *testing.T) {
 func TestBan_Execute_AlreadyBanned_IsNoOp(t *testing.T) {
 	// Application rule: повторный бан = no-op для вызывающего. Use case
 	// должен "проглотить" доменную ошибку ErrAlreadyBanned и вернуть nil.
-	port := &stubNftPort{addErr: domain.ErrAlreadyBanned}
+	port := &stubNftPort{addErr: domain.ErrAlreadyInSet}
 	uc := NewBan(port)
 	mac, _ := domain.NewMAC("aa:bb:cc:11:22:33")
 
 	_, err := uc.Execute(context.Background(), BanInput{MAC: mac})
 	if err != nil {
-		t.Errorf("ErrAlreadyBanned should be swallowed; got: %v", err)
+		t.Errorf("ErrAlreadyInSet should be swallowed; got: %v", err)
 	}
 }
 
