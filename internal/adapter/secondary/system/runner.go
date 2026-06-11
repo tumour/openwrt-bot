@@ -2,7 +2,9 @@ package system
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 )
 
@@ -16,22 +18,47 @@ type Runner interface {
 	Run(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
-// ExecRunner — продакшен-реализация через os/exec. Возвращает stdout как []byte.
-// stderr на error попадает в Error() сообщении wrapped error'а — это упрощает
-// диагностику без отдельного аргумента.
+// ExecError — ошибка внешней команды со структурными полями. Stderr отделён
+// от текста сообщения сознательно: адаптеры типизируют ошибки по нему (nft
+// пишет причину отказа в stderr), а матчить подстроку по всему Error() нельзя —
+// туда входят имя команды и аргументы, что даёт ложные срабатывания.
+type ExecError struct {
+	Name   string
+	Args   []string
+	Stderr []byte // пуст, если процесс не запустился (ErrNotFound и т.п.)
+	Err    error  // исходная ошибка os/exec
+}
+
+func (e *ExecError) Error() string {
+	if len(e.Stderr) > 0 {
+		return fmt.Sprintf("%s %v: %v (stderr: %s)", e.Name, e.Args, e.Err, e.Stderr)
+	}
+	return fmt.Sprintf("%s %v: %v", e.Name, e.Args, e.Err)
+}
+
+// Unwrap отдаёт исходную ошибку — errors.Is(err, exec.ErrNotFound) работает
+// сквозь ExecError (на этом стоит librespeed-адаптер).
+func (e *ExecError) Unwrap() error { return e.Err }
+
+// ExecRunner — продакшен-реализация через os/exec. Возвращает stdout как []byte,
+// на ошибке — *ExecError со stderr в отдельном поле.
 type ExecRunner struct{}
 
 func NewExecRunner() *ExecRunner { return &ExecRunner{} }
 
 func (r *ExecRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	// LC_ALL=C — сообщения утилит стабильно на английском: типизация ошибок
+	// по stderr (nftables) не должна зависеть от локали системы.
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	out, err := cmd.Output()
 	if err != nil {
-		// exec.ExitError содержит Stderr — добавим его в сообщение для трассировки.
-		if ee, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("%s %v: %w (stderr: %s)", name, args, err, ee.Stderr)
+		ee := &ExecError{Name: name, Args: args, Err: err}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			ee.Stderr = exitErr.Stderr
 		}
-		return nil, fmt.Errorf("%s %v: %w", name, args, err)
+		return nil, ee
 	}
 	return out, nil
 }

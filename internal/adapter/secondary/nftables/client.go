@@ -7,6 +7,7 @@ package nftables
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -66,17 +67,28 @@ func (c *Client) List(ctx context.Context) ([]domain.MAC, error) {
 	return parseSetElements(out), nil
 }
 
-// nft пишет ошибки коннект-уникализации в stderr. Сообщения относительно
-// стабильны между версиями, но завязываемся на ключевые слова, не на полный текст.
-func isAlreadyExists(err error) bool {
-	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "exists") || strings.Contains(s, "duplicate")
+// nft пишет причину отказа в stderr (netlink strerror). Матчим ТОЛЬКО stderr
+// типизированной system.ExecError: в Error() входят аргументы команды, и поиск
+// подстроки по всей строке давал бы ложные срабатывания. Ключевые слова, а не
+// полный текст — сообщения слегка гуляют между версиями nftables; локаль
+// зафиксирована (LC_ALL=C в ExecRunner).
+func stderrContains(err error, keywords ...string) bool {
+	var ee *system.ExecError
+	if !errors.As(err, &ee) {
+		return false
+	}
+	s := strings.ToLower(string(ee.Stderr))
+	for _, kw := range keywords {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+	return false
 }
 
-func isNotFound(err error) bool {
-	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "no such") || strings.Contains(s, "not exist")
-}
+func isAlreadyExists(err error) bool { return stderrContains(err, "exists", "duplicate") }
+
+func isNotFound(err error) bool { return stderrContains(err, "no such", "not exist") }
 
 // Захватывает группы "aa:bb:cc:dd:ee:ff" из строк вида
 //

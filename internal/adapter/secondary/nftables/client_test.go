@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tumour/openwrt-bot/internal/adapter/secondary/system"
 	"github.com/tumour/openwrt-bot/internal/domain"
 )
 
@@ -43,8 +44,14 @@ func TestAdd_OK(t *testing.T) {
 	}
 }
 
+// execErr собирает system.ExecError так, как её возвращает реальный ExecRunner:
+// причина отказа nft — в Stderr, не в тексте сообщения.
+func execErr(stderr string) error {
+	return &system.ExecError{Name: "nft", Stderr: []byte(stderr), Err: errors.New("exit status 1")}
+}
+
 func TestAdd_AlreadyExists(t *testing.T) {
-	fr := &fakeRunner{err: errors.New("nft: element already exists")}
+	fr := &fakeRunner{err: execErr("Error: Could not process rule: File exists")}
 	c := NewClient(fr, testTable, testSet)
 	mac, _ := domain.NewMAC("aa:bb:cc:11:22:33")
 
@@ -55,13 +62,26 @@ func TestAdd_AlreadyExists(t *testing.T) {
 }
 
 func TestRemove_NotFound(t *testing.T) {
-	fr := &fakeRunner{err: errors.New("nft: No such file or directory")}
+	fr := &fakeRunner{err: execErr("Error: Could not process rule: No such file or directory")}
 	c := NewClient(fr, testTable, testSet)
 	mac, _ := domain.NewMAC("aa:bb:cc:11:22:33")
 
 	err := c.Remove(context.Background(), mac)
 	if err == nil || !errors.Is(err, domain.ErrNotInSet) {
 		t.Fatalf("expected ErrNotInSet, got: %v", err)
+	}
+}
+
+// Ключевое слово в аргументах/тексте, но НЕ в stderr — не повод типизировать:
+// матчинг идёт строго по ExecError.Stderr, иначе ложные срабатывания.
+func TestAdd_KeywordOutsideStderr_NotMapped(t *testing.T) {
+	fr := &fakeRunner{err: errors.New("nft add element ... exists ... duplicate")}
+	c := NewClient(fr, testTable, testSet)
+	mac, _ := domain.NewMAC("aa:bb:cc:11:22:33")
+
+	err := c.Add(context.Background(), mac)
+	if err == nil || errors.Is(err, domain.ErrAlreadyInSet) {
+		t.Fatalf("обычная ошибка не должна маппиться в ErrAlreadyInSet: %v", err)
 	}
 }
 
