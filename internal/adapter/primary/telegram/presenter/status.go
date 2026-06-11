@@ -1,6 +1,10 @@
 // Package presenter форматирует use case Output → Telegram message text.
-// Это та часть, которая знает специфику канала (Markdown, эмодзи, длина).
+// Это та часть, которая знает специфику канала (эмодзи, длина, разметка).
 // Domain и app ничего этого не знают.
+//
+// Вся разметка — ТОЛЬКО HTML (tele.ModeHTML): в отличие от Markdown V1 у него
+// типизированное экранирование (html.EscapeString) для внешних строк — имён
+// хостов, серверов и прочего, что бот не контролирует. Не смешивать режимы.
 package presenter
 
 import (
@@ -11,14 +15,14 @@ import (
 	"github.com/tumour/openwrt-bot/internal/app/status"
 )
 
-// Status форматирует Snapshot в текстовое сообщение Markdown.
+// Status форматирует Snapshot в текстовое сообщение (HTML).
 func Status(s status.Snapshot) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "*Uptime:* %s\n", uptime(s.Uptime))
-	fmt.Fprintf(&b, "*Load:* %.2f / %.2f / %.2f\n", s.LoadAvg1, s.LoadAvg5, s.LoadAvg15)
-	fmt.Fprintf(&b, "*Memory:* %s свободно из %s\n", kb(s.MemFreeKB), kb(s.MemTotalKB))
+	fmt.Fprintf(&b, "<b>Uptime:</b> %s\n", uptime(s.Uptime))
+	fmt.Fprintf(&b, "<b>Load:</b> %.2f / %.2f / %.2f\n", s.LoadAvg1, s.LoadAvg5, s.LoadAvg15)
+	fmt.Fprintf(&b, "<b>Memory:</b> %s свободно из %s\n", kb(s.MemFreeKB), kb(s.MemTotalKB))
 	if s.TempCelsius > 0 {
-		fmt.Fprintf(&b, "*Temp:* %.1f°C\n", s.TempCelsius)
+		fmt.Fprintf(&b, "<b>Temp:</b> %.1f°C\n", s.TempCelsius)
 	}
 	return b.String()
 }

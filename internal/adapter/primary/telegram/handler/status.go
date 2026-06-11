@@ -30,5 +30,5 @@ func (h *Status) Handle(c tele.Context) error {
 		_ = c.Send("⚠ не удалось получить статус роутера")
 		return fmt.Errorf("/status: %w", err)
 	}
-	return c.Send(presenter.Status(out.Snapshot), tele.ModeMarkdown)
+	return c.Send(presenter.Status(out.Snapshot), tele.ModeHTML)
 }

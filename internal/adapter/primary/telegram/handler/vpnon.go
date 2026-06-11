@@ -21,7 +21,7 @@ func NewVPNOn(uc *device.EnableVPN) *VPNOn { return &VPNOn{uc: uc} }
 func (h *VPNOn) Handle(c tele.Context) error {
 	args := c.Args()
 	if len(args) == 0 {
-		return c.Send("использование: `/vpnon aa:bb:cc:dd:ee:ff`", tele.ModeMarkdown)
+		return c.Send("использование: <code>/vpnon aa:bb:cc:dd:ee:ff</code>", tele.ModeHTML)
 	}
 
 	mac, err := domain.NewMAC(args[0])
@@ -36,5 +36,5 @@ func (h *VPNOn) Handle(c tele.Context) error {
 		_ = c.Send("⚠ не удалось вернуть устройство в VPN")
 		return fmt.Errorf("/vpnon: %w", err)
 	}
-	return c.Send(presenter.VPNOn(mac), tele.ModeMarkdown)
+	return c.Send(presenter.VPNOn(mac), tele.ModeHTML)
 }

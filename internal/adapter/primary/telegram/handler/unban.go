@@ -21,7 +21,7 @@ func NewUnban(uc *device.Unban) *Unban { return &Unban{uc: uc} }
 func (h *Unban) Handle(c tele.Context) error {
 	args := c.Args()
 	if len(args) == 0 {
-		return c.Send("использование: `/unban aa:bb:cc:dd:ee:ff`", tele.ModeMarkdown)
+		return c.Send("использование: <code>/unban aa:bb:cc:dd:ee:ff</code>", tele.ModeHTML)
 	}
 
 	mac, err := domain.NewMAC(args[0])
@@ -36,5 +36,5 @@ func (h *Unban) Handle(c tele.Context) error {
 		_ = c.Send("⚠ не удалось разбанить устройство")
 		return fmt.Errorf("/unban: %w", err)
 	}
-	return c.Send(presenter.Unbanned(mac), tele.ModeMarkdown)
+	return c.Send(presenter.Unbanned(mac), tele.ModeHTML)
 }

@@ -21,7 +21,7 @@ func NewBan(uc *device.Ban) *Ban { return &Ban{uc: uc} }
 func (h *Ban) Handle(c tele.Context) error {
 	args := c.Args()
 	if len(args) == 0 {
-		return c.Send("использование: `/ban aa:bb:cc:dd:ee:ff`", tele.ModeMarkdown)
+		return c.Send("использование: <code>/ban aa:bb:cc:dd:ee:ff</code>", tele.ModeHTML)
 	}
 
 	mac, err := domain.NewMAC(args[0])
@@ -36,5 +36,5 @@ func (h *Ban) Handle(c tele.Context) error {
 		_ = c.Send("⚠ не удалось забанить устройство")
 		return fmt.Errorf("/ban: %w", err)
 	}
-	return c.Send(presenter.Banned(mac), tele.ModeMarkdown)
+	return c.Send(presenter.Banned(mac), tele.ModeHTML)
 }
