@@ -46,10 +46,10 @@ func (c *Client) Measure(ctx context.Context) (network.SpeedResult, error) {
 
 	out, err := c.runner.Run(ctx, "librespeed-cli", args...)
 	if err != nil {
-		// Бинаря нет на роутере — даём действенную подсказку вместо сырого
-		// "executable file not found in $PATH".
+		// Бинаря нет на роутере — переводим в типизированную ошибку app-уровня,
+		// текст подсказки для юзера — забота primary adapter'а (handler).
 		if errors.Is(err, exec.ErrNotFound) {
-			return network.SpeedResult{}, fmt.Errorf("librespeed-cli не установлен на роутере — поставь: apk add librespeed-cli")
+			return network.SpeedResult{}, fmt.Errorf("librespeed-cli: %w", network.ErrToolMissing)
 		}
 		return network.SpeedResult{}, fmt.Errorf("run librespeed-cli: %w", err)
 	}
@@ -59,7 +59,7 @@ func (c *Client) Measure(ctx context.Context) (network.SpeedResult, error) {
 		return network.SpeedResult{}, fmt.Errorf("parse librespeed output: %w", err)
 	}
 	if len(results) == 0 {
-		return network.SpeedResult{}, fmt.Errorf("librespeed-cli вернул пустой результат")
+		return network.SpeedResult{}, fmt.Errorf("librespeed-cli returned empty result")
 	}
 
 	r := results[0]

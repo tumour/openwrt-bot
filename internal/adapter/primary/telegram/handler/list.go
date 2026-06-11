@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/presenter"
 	"github.com/tumour/openwrt-bot/internal/app/device"
@@ -22,7 +23,8 @@ func (h *List) Handle(c tele.Context) error {
 
 	out, err := h.uc.Execute(ctx, device.ListInput{})
 	if err != nil {
-		return c.Send("⚠ " + err.Error())
+		_ = c.Send("⚠ не удалось получить список устройств")
+		return fmt.Errorf("/list: %w", err)
 	}
 	return c.Send(presenter.DeviceList(out.Devices), tele.ModeHTML)
 }

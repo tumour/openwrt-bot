@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/presenter"
 	"github.com/tumour/openwrt-bot/internal/app/status"
@@ -26,7 +27,8 @@ func (h *Status) Handle(c tele.Context) error {
 
 	out, err := h.uc.Execute(ctx, status.GetStatusInput{})
 	if err != nil {
-		return c.Send("⚠ не удалось получить статус: " + err.Error())
+		_ = c.Send("⚠ не удалось получить статус роутера")
+		return fmt.Errorf("/status: %w", err)
 	}
 	return c.Send(presenter.Status(out.Snapshot), tele.ModeMarkdown)
 }

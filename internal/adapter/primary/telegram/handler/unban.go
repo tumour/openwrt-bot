@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/presenter"
 	"github.com/tumour/openwrt-bot/internal/app/device"
@@ -32,7 +33,8 @@ func (h *Unban) Handle(c tele.Context) error {
 	defer cancel()
 
 	if _, err := h.uc.Execute(ctx, device.UnbanInput{MAC: mac}); err != nil {
-		return c.Send("⚠ " + err.Error())
+		_ = c.Send("⚠ не удалось разбанить устройство")
+		return fmt.Errorf("/unban: %w", err)
 	}
 	return c.Send(presenter.Unbanned(mac), tele.ModeMarkdown)
 }

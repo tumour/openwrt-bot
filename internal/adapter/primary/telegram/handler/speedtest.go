@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/presenter"
@@ -36,8 +38,12 @@ func (h *SpeedTest) Handle(c tele.Context) error {
 
 	out, err := h.uc.Execute(ctx, network.RunSpeedTestInput{})
 	if err != nil {
-		_, _ = c.Bot().Edit(msg, "⚠ не удалось замерить скорость: "+err.Error())
-		return nil
+		text := "⚠ не удалось замерить скорость"
+		if errors.Is(err, network.ErrToolMissing) {
+			text = "⚠ librespeed-cli не установлен на роутере — поставь: apk add librespeed-cli"
+		}
+		_, _ = c.Bot().Edit(msg, text)
+		return fmt.Errorf("/speedtest: %w", err)
 	}
 	_, err = c.Bot().Edit(msg, presenter.SpeedTest(out.Result), tele.ModeMarkdown)
 	return err

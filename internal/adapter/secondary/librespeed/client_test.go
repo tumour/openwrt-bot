@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/tumour/openwrt-bot/internal/app/network"
 )
 
 // fakeRunner — мок system.Runner: пишет аргументы, отдаёт предзаданный stdout/err.
@@ -82,8 +84,8 @@ func TestClient_Measure_BinaryMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "apk add librespeed-cli") {
-		t.Errorf("ожидалась подсказка про установку, got: %v", err)
+	if !errors.Is(err, network.ErrToolMissing) {
+		t.Errorf("ожидалась network.ErrToolMissing, got: %v", err)
 	}
 }
 

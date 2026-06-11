@@ -1,6 +1,14 @@
 package network
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrToolMissing — инструмент замера не установлен на роутере. Типизирована,
+// чтобы primary adapter мог показать юзеру подсказку по установке, не завязываясь
+// на текст ошибки secondary adapter'а.
+var ErrToolMissing = errors.New("speedtest tool is not installed")
 
 // SpeedTestPort замеряет скорость интернет-канала роутера. Реализуется через
 // librespeed-cli (impl в adapter/secondary/librespeed). Замер локальный для
