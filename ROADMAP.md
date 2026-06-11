@@ -48,14 +48,14 @@
 - **Единый источник** `commands()` в `router.go`: один список `[]command{name, desc, handle, inMenu}` питает И маршруты (`registerRoutes`), И меню (`menuCommands`) — добавление команды остаётся одной строкой, списки не разъезжаются.
 - `/start` помечен `inMenu:false` (алиас `/status`, в меню не нужен). Установка меню в `NewBot` — best-effort (ошибка API логируется, старт не валит). Тест на ограничения Telegram (имя `[a-z0-9_]`≤32, описание 3-256 символов).
 
-## Следующее
+### Деплой на роутер
+- Роутер живой: OpenWrt 25.12.4 (aarch64), бот крутится procd-сервисом, управление тумблером `bot on/off/restart/status/log`.
+- `make deploy` — одна команда: `build-router` → scp на роутер → `bot off` → подмена `/usr/bin/home-monitor` → `bot on`. init.d и тумблер заливаются только если изменились (`cmp`).
+- Доступ: ssh-алиас `router` в `~/.ssh/config` (100.64.0.2 через jump-VPS), авторизация по ключу.
+- Нюанс: dropbear на OpenWrt без sftp-server → scp с флагом `-O` (легаси-протокол).
+- env на роутере (`/etc/openwrt-bot.env`) переименован под `ALLOWED_USER_IDS` (2026-06-11).
 
-### Развёртывание на AX3200
-- Прошить роутер на OpenWrt 23.05+ (отдельная задача — гайд под AX3200 через USB-TTL/exploit).
-- `make build-router` — cross-compile под ARM64 с `-s -w`.
-- `/etc/init.d/openwrt-bot` — procd-сервис для автозапуска.
-- Bootstrap nftables: создать set `banned_macs` + правило `drop ether saddr @banned_macs` в `inet fw4 forward`.
-- `.env` на роутере: `BOT_TOKEN`, `ALLOWED_USER_IDS`, опционально `LOG_LEVEL`.
+## Следующее
 
 ### Дальше (когда понадобится)
 - `/reboot` — управляемый рестарт с подтверждением кнопкой.

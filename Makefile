@@ -1,4 +1,4 @@
-.PHONY: build build-router test lint tidy run
+.PHONY: build build-router test lint tidy run deploy
 
 BIN_DIR := bin
 BIN     := $(BIN_DIR)/bot
@@ -32,3 +32,10 @@ tidy:
 
 run: build
 	$(BIN)
+
+# Залить свежий бинарь (+ init.d/тумблер, если менялись) на роутер
+# и перезапустить через тумблер bot off/on. Доступ — ssh-алиас `router`
+# (jump-VPS, ключ), детали в deploy/deploy.sh.
+deploy:
+	@chmod +x deploy/deploy.sh
+	./deploy/deploy.sh
