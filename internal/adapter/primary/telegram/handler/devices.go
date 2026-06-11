@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/middleware"
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/presenter"
 	"github.com/tumour/openwrt-bot/internal/app/device"
 	"github.com/tumour/openwrt-bot/internal/domain"
@@ -64,7 +65,7 @@ func (h *Devices) RegisterCallbacks(bot *tele.Bot) {
 
 // HandleList — команда /list: заголовок + кнопка на каждое устройство.
 func (h *Devices) HandleList(c tele.Context) error {
-	ctx, cancel := context.WithTimeout(context.Background(), handlerTimeout)
+	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
 	defer cancel()
 
 	out, err := h.list.Execute(ctx, device.ListInput{})
@@ -90,7 +91,7 @@ func (h *Devices) handleCard(c tele.Context) error {
 
 // handleBack — «К списку»: редактируем карточку обратно в список.
 func (h *Devices) handleBack(c tele.Context) error {
-	ctx, cancel := context.WithTimeout(context.Background(), handlerTimeout)
+	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
 	defer cancel()
 
 	out, err := h.list.Execute(ctx, device.ListInput{})
@@ -113,7 +114,7 @@ func (h *Devices) action(do func(context.Context, domain.MAC) error, toast strin
 			return c.Respond(&tele.CallbackResponse{Text: "⚠ битый MAC в кнопке"})
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), handlerTimeout)
+		ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
 		defer cancel()
 
 		if err := do(ctx, mac); err != nil {
@@ -129,7 +130,7 @@ func (h *Devices) action(do func(context.Context, domain.MAC) error, toast strin
 
 // renderCard рисует карточку устройства по свежему состоянию (Edit сообщения).
 func (h *Devices) renderCard(c tele.Context, mac domain.MAC) error {
-	ctx, cancel := context.WithTimeout(context.Background(), handlerTimeout)
+	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
 	defer cancel()
 
 	out, err := h.list.Execute(ctx, device.ListInput{})

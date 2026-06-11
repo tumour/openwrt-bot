@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/middleware"
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/presenter"
 	"github.com/tumour/openwrt-bot/internal/app/status"
 	tele "gopkg.in/telebot.v3"
@@ -22,7 +23,7 @@ func NewStatus(uc *status.GetStatus) *Status {
 // Handle — точка входа от telebot. Подпись фиксирована библиотекой:
 // `func(c tele.Context) error`.
 func (h *Status) Handle(c tele.Context) error {
-	ctx, cancel := context.WithTimeout(context.Background(), handlerTimeout)
+	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
 	defer cancel()
 
 	out, err := h.uc.Execute(ctx, status.GetStatusInput{})

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/middleware"
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/presenter"
 	"github.com/tumour/openwrt-bot/internal/app/device"
 	"github.com/tumour/openwrt-bot/internal/domain"
@@ -29,7 +30,7 @@ func (h *Unban) Handle(c tele.Context) error {
 		return c.Send("⚠ невалидный MAC: " + args[0])
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), handlerTimeout)
+	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
 	defer cancel()
 
 	if _, err := h.uc.Execute(ctx, device.UnbanInput{MAC: mac}); err != nil {

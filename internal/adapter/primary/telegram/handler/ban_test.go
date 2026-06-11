@@ -26,6 +26,10 @@ func (f *fakeCtx) Send(what interface{}, _ ...interface{}) error {
 	return nil
 }
 
+// Get нужен middleware.BaseContext: фейк без обвязки бота возвращает nil,
+// и handler честно падает обратно на context.Background().
+func (f *fakeCtx) Get(string) interface{} { return nil }
+
 // stubNft — стаб device.MACSetPort: Ban-хендлеру нужен только Add.
 type stubNft struct{ addErr error }
 

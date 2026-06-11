@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/middleware"
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/presenter"
 	"github.com/tumour/openwrt-bot/internal/app/network"
 	tele "gopkg.in/telebot.v3"
@@ -33,7 +34,7 @@ func (h *SpeedTest) Handle(c tele.Context) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), speedtestTimeout)
+	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), speedtestTimeout)
 	defer cancel()
 
 	out, err := h.uc.Execute(ctx, network.RunSpeedTestInput{})
