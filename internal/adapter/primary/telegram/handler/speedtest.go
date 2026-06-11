@@ -45,6 +45,6 @@ func (h *SpeedTest) Handle(c tele.Context) error {
 		_, _ = c.Bot().Edit(msg, text)
 		return fmt.Errorf("/speedtest: %w", err)
 	}
-	_, err = c.Bot().Edit(msg, presenter.SpeedTest(out.Result), tele.ModeMarkdown)
+	_, err = c.Bot().Edit(msg, presenter.SpeedTest(out.Result), tele.ModeHTML)
 	return err
 }
