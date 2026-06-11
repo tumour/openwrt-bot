@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -146,10 +147,15 @@ func (h *Devices) renderCard(c tele.Context, mac domain.MAC) error {
 	return editKeepalive(c, presenter.CardGone(mac.String()), backOnlyMarkup())
 }
 
-// editKeepalive — Edit, игнорирующий "message is not modified": повторный тап
-// «Обновить» без изменений — это не ошибка.
+// editKeepalive — Edit, игнорирующий «message is not modified»: повторный тап
+// «Обновить» без изменений — это не ошибка. Сначала типизированные ошибки
+// telebot (Telegram шлёт два варианта описания), подстрока — страховка на
+// случай, если Telegram поменяет текст и маппинг telebot перестанет узнавать.
 func editKeepalive(c tele.Context, text string, markup *tele.ReplyMarkup) error {
 	err := c.Edit(text, markup, tele.ModeHTML)
+	if errors.Is(err, tele.ErrSameMessageContent) || errors.Is(err, tele.ErrMessageNotModified) {
+		return nil
+	}
 	if err != nil && strings.Contains(err.Error(), "not modified") {
 		return nil
 	}
