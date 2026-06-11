@@ -55,7 +55,7 @@
 - `make build-router` — cross-compile под ARM64 с `-s -w`.
 - `/etc/init.d/openwrt-bot` — procd-сервис для автозапуска.
 - Bootstrap nftables: создать set `banned_macs` + правило `drop ether saddr @banned_macs` в `inet fw4 forward`.
-- `.env` на роутере: `BOT_TOKEN`, `ALLOWED_CHAT_IDS`, опционально `LOG_LEVEL`.
+- `.env` на роутере: `BOT_TOKEN`, `ALLOWED_USER_IDS`, опционально `LOG_LEVEL`.
 
 ### Дальше (когда понадобится)
 - `/reboot` — управляемый рестарт с подтверждением кнопкой.

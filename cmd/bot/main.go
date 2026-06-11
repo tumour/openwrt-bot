@@ -74,7 +74,7 @@ func run() error {
 
 	// 7. Bot. Собирается из cfg, logger, handlers — больше ничего не нужно.
 	bot, err := telegram.NewBot(
-		telegram.Config{Token: cfg.BotToken, AllowedChatIDs: cfg.AllowedChatIDs},
+		telegram.Config{Token: cfg.BotToken, AllowedUserIDs: cfg.AllowedUserIDs},
 		log,
 		handlers,
 	)
@@ -82,6 +82,6 @@ func run() error {
 		return err
 	}
 
-	log.Info("openwrt-bot started", "allowed_chats", len(cfg.AllowedChatIDs))
+	log.Info("openwrt-bot started", "allowed_users", len(cfg.AllowedUserIDs))
 	return bot.Run(ctx)
 }

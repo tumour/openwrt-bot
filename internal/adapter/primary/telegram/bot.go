@@ -15,7 +15,7 @@ import (
 // Config — настройки бота. Tokенов мы тут не валидируем (это работа config layer).
 type Config struct {
 	Token          string
-	AllowedChatIDs []int64
+	AllowedUserIDs []int64 // whitelist Telegram user ID (отправители, не чаты)
 }
 
 // Bot — обёртка над telebot.Bot с lifecycle-методом Run, удобным для main.
@@ -38,7 +38,7 @@ func NewBot(cfg Config, logger *slog.Logger, h Handlers) (*Bot, error) {
 
 	// Порядок middleware важен: сначала Auth (чтобы не логировать спам от чужих),
 	// потом Log (логируем только прошедшие auth).
-	tb.Use(middleware.Auth(cfg.AllowedChatIDs, logger))
+	tb.Use(middleware.Auth(cfg.AllowedUserIDs, logger))
 	tb.Use(middleware.Log(logger))
 
 	registerRoutes(tb, h)

@@ -10,8 +10,11 @@ import (
 // caarlos0/env по тегам распарсит ENV → struct, и если required-поле пустое
 // или required=true проваливается — вернёт ошибку. Это даёт "fail fast" на старте.
 type Config struct {
-	BotToken       string  `env:"BOT_TOKEN,required"`
-	AllowedChatIDs []int64 `env:"ALLOWED_CHAT_IDS,required" envSeparator:","`
+	BotToken string `env:"BOT_TOKEN,required"`
+	// AllowedUserIDs — whitelist Telegram user ID (не chat ID!): Auth-middleware
+	// проверяет отправителя сообщения. В личке user ID и chat ID совпадают,
+	// в группах — нет, поэтому имя переменной говорит то, что проверяется.
+	AllowedUserIDs []int64 `env:"ALLOWED_USER_IDS,required" envSeparator:","`
 	LogLevel       string  `env:"LOG_LEVEL" envDefault:"info"`
 	DhcpLeasesPath string  `env:"DHCP_LEASES_PATH" envDefault:"/tmp/dhcp.leases"`
 	// ThermalZonePath — sysfs-файл с температурой CPU для /status. На разных
