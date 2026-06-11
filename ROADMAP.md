@@ -62,6 +62,14 @@
 - `/list` помечает обходящие устройства: 🌐 + «без VPN». Бан сильнее обхода (drop стоит в цепочке первым).
 - Нюанс: DNS у «прямого» устройства при включённом VPN остаётся через xray DoH (dnsmasq общий на LAN) — трафик прямой, резолв честный. IPv6 при VPN on глушится для всего LAN, обходное устройство живёт на v4.
 
+### Итерация 8 — надёжность (2026-06-11)
+- **Баг:** имя speedtest-сервера вклеивалось в Markdown без экранирования — «_»/«*» в имени → Telegram 400 → Edit падал, юзер навсегда оставался с «⏳ замеряю…». Заодно все сообщения переведены на единый HTML-режим (`tele.ModeHTML`): у HTML типизированное экранирование (`html.EscapeString`) для внешних строк. Markdown в боте больше не используется.
+- **Баг:** graceful shutdown не доходил до handlers — таймауты строились от `context.Background()`, telebot `Stop()` in-flight горутины не ждёт. Теперь track-middleware кладёт базовый ctx из `Run` в `telebot.Context` (`middleware.BaseContext`), все handler-таймауты строятся от него, `Bot.Run` дожидается in-flight (WaitGroup, потолок 5с). Это же было причиной долгого `bot off` в deploy.
+- `system.Runner` → типизированная `ExecError{Name, Args, Stderr, Err}`: nftables типизирует `ErrAlreadyInSet`/`ErrNotInSet` строго по полю Stderr (раньше — подстрока по всему Error() вместе с аргументами команды). `LC_ALL=C` в exec — независимость от локали. `Unwrap` сохраняет `errors.Is(err, exec.ErrNotFound)` для librespeed.
+- `editKeepalive` узнаёт «message is not modified» типизированно (`tele.ErrSameMessageContent`/`ErrMessageNotModified`), подстрока — страховка.
+- Dependency rule проверяется машинно: `internal/archtest` (domain → только stdlib; app → только domain). GitHub Actions: `make lint` + `make test` на каждый push/PR.
+- **Решение:** контракт `MACSetPort` с типизированными ошибками сознательно НЕ заменён на идемпотентный — «повторный бан = no-op» остаётся демонстрацией application rule в app-слое (см. README). Пересмотреть, если у Ban появится второе действие (deauth и т.п.).
+
 ## Следующее
 
 ### Дальше (когда понадобится)
