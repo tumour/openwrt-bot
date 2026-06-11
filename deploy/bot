@@ -19,7 +19,10 @@ case "${1:-status}" in
         ;;
     off)
         "$SVC" stop
-        sleep 1
+        # Graceful shutdown ждёт завершения long-poll Telegram (до ~10с по
+        # таймауту поллера) — ждём реальной смерти процесса, а не секунду.
+        i=0
+        while is_running && [ $i -lt 12 ]; do sleep 1; i=$((i+1)); done
         if is_running; then echo "✗ бот ещё жив (повтори bot off)"; else echo "✓ bot OFF"; fi
         ;;
     restart)
