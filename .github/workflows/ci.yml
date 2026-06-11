@@ -1,0 +1,20 @@
+# CI: lint + тесты на каждый push/PR. golangci-lint в make lint опционален
+# (скипается, если не установлен) — обязательная планка тут: vet, gofmt,
+# go test -race и арх-тест dependency rule (internal/archtest).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make lint
+      - run: make test
