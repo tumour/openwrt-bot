@@ -11,9 +11,9 @@ import (
 // stubNftRemove — отдельный stub под Unban-тест, чтобы не мешать Ban-тестам
 // общим счётчиком. Намеренно мелкий — реализуем только то, что нужно use case.
 type stubNftRemove struct {
-	removeErr     error
-	removeCalled  int
-	gotRemoveMAC  domain.MAC
+	removeErr    error
+	removeCalled int
+	gotRemoveMAC domain.MAC
 }
 
 func (s *stubNftRemove) AddBanned(_ context.Context, _ domain.MAC) error { return nil }

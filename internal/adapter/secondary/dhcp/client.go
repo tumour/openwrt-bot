@@ -2,9 +2,12 @@
 // (по умолчанию /tmp/dhcp.leases на OpenWrt) и парсит в domain.Device.
 //
 // Формат строки (5 полей, разделитель пробел):
-//   <expiry> <mac> <ip> <hostname|*> <client-id|*>
+//
+//	<expiry> <mac> <ip> <hostname|*> <client-id|*>
+//
 // Пример:
-//   1700000000 aa:bb:cc:dd:ee:ff 192.168.88.42 my-laptop 01:aa:bb:cc:dd:ee:ff
+//
+//	1700000000 aa:bb:cc:dd:ee:ff 192.168.88.42 my-laptop 01:aa:bb:cc:dd:ee:ff
 package dhcp
 
 import (

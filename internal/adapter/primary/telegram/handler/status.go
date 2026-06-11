@@ -1,11 +1,7 @@
-// Package handler — driving adapter: каждая команда Telegram превращается в
-// вызов соответствующего use case. Handler НЕ содержит бизнес-логики, только
-// I/O-преобразование: telebot.Context → use case Input → presenter → Send.
 package handler
 
 import (
 	"context"
-	"time"
 
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/presenter"
 	"github.com/tumour/openwrt-bot/internal/app/status"
@@ -21,10 +17,6 @@ type Status struct {
 func NewStatus(uc *status.GetStatus) *Status {
 	return &Status{uc: uc}
 }
-
-// handlerTimeout — внутренний лимит, чтобы зависший exec не повесил бот.
-// 10 секунд с запасом для самого медленного `ubus call` на слабом роутере.
-const handlerTimeout = 10 * time.Second
 
 // Handle — точка входа от telebot. Подпись фиксирована библиотекой:
 // `func(c tele.Context) error`.

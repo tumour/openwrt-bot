@@ -20,7 +20,12 @@ test:
 
 lint:
 	go vet ./...
-	@command -v golangci-lint >/dev/null && golangci-lint run ./... || echo "golangci-lint not installed, skipped"
+	gofmt -l . | grep . && exit 1 || true
+	@if command -v golangci-lint >/dev/null; then \
+		golangci-lint run ./...; \
+	else \
+		echo "golangci-lint not installed, skipped"; \
+	fi
 
 tidy:
 	go mod tidy

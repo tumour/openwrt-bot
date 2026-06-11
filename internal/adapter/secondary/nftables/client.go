@@ -62,7 +62,7 @@ func (c *Client) ListBanned(ctx context.Context) ([]domain.MAC, error) {
 	if err != nil {
 		return nil, fmt.Errorf("nft list set: %w", err)
 	}
-	return parseSetElements(out)
+	return parseSetElements(out), nil
 }
 
 // nft пишет ошибки коннект-уникализации в stderr. Сообщения относительно
@@ -78,10 +78,11 @@ func isNotFound(err error) bool {
 }
 
 // Захватывает группы "aa:bb:cc:dd:ee:ff" из строк вида
-//   elements = { aa:bb:..., 11:22:... }
+//
+//	elements = { aa:bb:..., 11:22:... }
 var macInList = regexp.MustCompile(`[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}`)
 
-func parseSetElements(raw []byte) ([]domain.MAC, error) {
+func parseSetElements(raw []byte) []domain.MAC {
 	// Стандартный nft-вывод многострочный — берём всё разом, регексп matchAll.
 	matches := macInList.FindAll(bytes.TrimSpace(raw), -1)
 	out := make([]domain.MAC, 0, len(matches))
@@ -94,5 +95,5 @@ func parseSetElements(raw []byte) ([]domain.MAC, error) {
 		}
 		out = append(out, mac)
 	}
-	return out, nil
+	return out
 }

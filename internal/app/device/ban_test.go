@@ -11,9 +11,9 @@ import (
 // stubNftPort реализует только методы, нужные для Ban-теста. Это легитимно —
 // порты сделаны узкими специально, чтобы стабы оставались мелкими.
 type stubNftPort struct {
-	addErr     error
-	addCalled  int
-	gotAddMAC  domain.MAC
+	addErr    error
+	addCalled int
+	gotAddMAC domain.MAC
 }
 
 func (s *stubNftPort) AddBanned(_ context.Context, mac domain.MAC) error {
