@@ -33,9 +33,10 @@ tidy:
 run: build
 	$(BIN)
 
-# Залить свежий бинарь (+ init.d/тумблер, если менялись) на роутер
-# и перезапустить через тумблер bot off/on. Доступ — ssh-алиас `router`
-# (jump-VPS, ключ), детали в deploy/deploy.sh.
+# Залить на роутер только изменившиеся артефакты (идемпотентно) и
+# перезапустить бота лишь при необходимости. Таргет — env-файл в deploy/env/:
+#   make deploy TARGET=ax3200
+# Куда коннектиться — из шапки deploy/env/<target>.env. Детали в deploy/deploy.sh.
 deploy:
 	@chmod +x deploy/deploy.sh
-	./deploy/deploy.sh
+	./deploy/deploy.sh $(TARGET)
