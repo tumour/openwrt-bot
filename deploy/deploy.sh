@@ -71,9 +71,16 @@ ssh "$HOST" '
 		mv /tmp/openwrt-bot.new /etc/init.d/openwrt-bot; chmod 755 /etc/init.d/openwrt-bot
 		echo "    ~ /etc/init.d/openwrt-bot"; changed=1; restart=1
 	fi
-	if ! cmp -s /tmp/openwrt-bot.env.new /etc/openwrt-bot.env; then
-		mv /tmp/openwrt-bot.env.new /etc/openwrt-bot.env; chmod 600 /etc/openwrt-bot.env
-		echo "    ~ /etc/openwrt-bot.env"; changed=1; restart=1
+	# Конфиг и state бота — в каталоге /etc/openwrt-bot/ (env, будущий users.json).
+	mkdir -p /etc/openwrt-bot
+	if ! cmp -s /tmp/openwrt-bot.env.new /etc/openwrt-bot/env; then
+		mv /tmp/openwrt-bot.env.new /etc/openwrt-bot/env; chmod 600 /etc/openwrt-bot/env
+		echo "    ~ /etc/openwrt-bot/env"; changed=1; restart=1
+	fi
+	# Одна строка в бэкап-списке sysupgrade — весь каталог переживает перепрошивку.
+	if ! grep -qx "/etc/openwrt-bot/" /etc/sysupgrade.conf 2>/dev/null; then
+		echo "/etc/openwrt-bot/" >> /etc/sysupgrade.conf
+		echo "    + /etc/sysupgrade.conf: /etc/openwrt-bot/"; changed=1
 	fi
 
 	# Бинарь нельзя подменить на работающем (text file busy) → сначала bot off.

@@ -9,7 +9,10 @@ START=95
 STOP=10
 
 PROG=/usr/bin/home-monitor
-ENV_FILE=/etc/openwrt-bot.env
+# Конфиг и runtime-состояние бота живут в одном каталоге /etc/openwrt-bot/
+# (по образцу /etc/xray/): env, в будущем users.json. Каталог вписан в
+# /etc/sysupgrade.conf (см. deploy.sh) — переживает перепрошивку целиком.
+ENV_FILE=/etc/openwrt-bot/env
 NFT_TABLE="inet fw4"
 NFT_SET="banned_macs"
 NFT_DIRECT_SET="vpn_direct_macs"
