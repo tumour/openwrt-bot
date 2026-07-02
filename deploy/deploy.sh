@@ -46,7 +46,7 @@ make build-router
 
 echo "==> $TARGET ($HOST): заливаю во временные файлы"
 # -O — легаси scp: dropbear на OpenWrt без sftp-server.
-scp -O -q bin/bot-arm64      "$HOST":/tmp/home-monitor.new
+scp -O -q bin/bot-arm64      "$HOST":/tmp/openwrt-bot.bin.new
 scp -O -q "$ENV_FILE"        "$HOST":/tmp/openwrt-bot.env.new
 scp -O -q deploy/openwrt-bot "$HOST":/tmp/openwrt-bot.new
 scp -O -q deploy/bot         "$HOST":/tmp/bot.new
@@ -85,16 +85,16 @@ ssh "$HOST" '
 
 	# Бинарь нельзя подменить на работающем (text file busy) → сначала bot off.
 	# `bot off` на незапущенном боте — no-op, поэтому работает и для установки с нуля.
-	if ! cmp -s /tmp/home-monitor.new /usr/bin/home-monitor; then
+	if ! cmp -s /tmp/openwrt-bot.bin.new /usr/bin/openwrt-bot; then
 		bot off
-		mv /tmp/home-monitor.new /usr/bin/home-monitor; chmod 755 /usr/bin/home-monitor
-		echo "    ~ /usr/bin/home-monitor"
+		mv /tmp/openwrt-bot.bin.new /usr/bin/openwrt-bot; chmod 755 /usr/bin/openwrt-bot
+		echo "    ~ /usr/bin/openwrt-bot"
 		bot on          # поднимет бота и подхватит новый env/init.d заодно
 		changed=1; restart=0
 	elif [ "$restart" = 1 ]; then
 		bot restart     # бинарь тот же, но env/init.d сменились
 	fi
 
-	rm -f /tmp/home-monitor.new /tmp/openwrt-bot.env.new /tmp/openwrt-bot.new /tmp/bot.new
+	rm -f /tmp/openwrt-bot.bin.new /tmp/openwrt-bot.env.new /tmp/openwrt-bot.new /tmp/bot.new
 	[ "$changed" = 1 ] || echo "    ничего не изменилось — бот не тронут"
 '

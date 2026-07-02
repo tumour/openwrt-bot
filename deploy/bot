@@ -6,8 +6,10 @@ SVC=/etc/init.d/openwrt-bot
 SOCKS_PORT=10808
 
 vpn_socks_up() { netstat -lnt 2>/dev/null | grep -q "127.0.0.1:$SOCKS_PORT"; }
-is_running()   { ps w | grep -q "[h]ome-monitor"; }
-bot_pid()      { ps w | grep "[h]ome-monitor" | grep -v grep | awk '{print $1}' | head -1; }
+# Матчим полный путь бинаря: голый "openwrt-bot" ловил бы в ps и запущенный
+# /etc/init.d/openwrt-bot.
+is_running()   { ps w | grep -q "/usr/bin/[o]penwrt-bot"; }
+bot_pid()      { ps w | grep "/usr/bin/[o]penwrt-bot" | grep -v grep | awk '{print $1}' | head -1; }
 
 case "${1:-status}" in
     on)
@@ -33,10 +35,10 @@ case "${1:-status}" in
         echo "бот:           $(is_running && echo "running (pid $(bot_pid))" || echo stopped)"
         echo "VPN-socks $SOCKS_PORT: $(vpn_socks_up && echo "слушает ✓" || echo "НЕТ — нужен 'vpn on'")"
         echo "последняя активность:"
-        logread 2>/dev/null | grep home-monitor | tail -1 | sed 's/^/  /' || echo "  (лога нет)"
+        logread 2>/dev/null | grep openwrt-bot | tail -1 | sed 's/^/  /' || echo "  (лога нет)"
         ;;
     log)
-        logread 2>/dev/null | grep home-monitor | tail -20
+        logread 2>/dev/null | grep openwrt-bot | tail -20
         ;;
     *)
         echo "usage: bot {on|off|restart|status|log}" >&2; exit 1 ;;
