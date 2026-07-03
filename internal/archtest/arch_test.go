@@ -1,7 +1,9 @@
 // Package archtest машинно проверяет dependency rule из README:
 //
 //	domain — ничего не импортирует, кроме stdlib;
-//	app    — только domain (+stdlib).
+//	app    — только domain (+stdlib) и подпакеты СВОЕЙ фичи
+//	         (вертикальный слайс владеет своими подпакетами: например,
+//	         access/accesstest — контрактный сьют портов access).
 //
 // «Нарушение dependency rule = архитектура сломана» — поэтому это тест,
 // а не пункт code-review. Adapter/platform/cmd не проверяем: их свобода
@@ -32,8 +34,28 @@ func TestApp_ImportsOnlyDomainAndStdlib(t *testing.T) {
 		if isStdlib(imp) || imp == module+"/internal/domain" {
 			return
 		}
-		t.Errorf("%s: импорт %q — app может зависеть только от domain и stdlib", file, imp)
+		if feat := featureOf(file); feat != "" && sameFeature(imp, feat) {
+			return
+		}
+		t.Errorf("%s: импорт %q — app может зависеть только от domain, stdlib и подпакетов своей фичи", file, imp)
 	})
+}
+
+// featureOf извлекает имя фичи из пути ../app/<фича>/…
+func featureOf(file string) string {
+	parts := strings.Split(filepath.ToSlash(file), "/")
+	for i, p := range parts {
+		if p == "app" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
+}
+
+// sameFeature — импорт лежит внутри того же вертикального слайса.
+func sameFeature(imp, feature string) bool {
+	prefix := module + "/internal/app/" + feature
+	return imp == prefix || strings.HasPrefix(imp, prefix+"/")
 }
 
 // isStdlib: у stdlib-пакетов первый сегмент пути без точки ("fmt", "net/http"),
