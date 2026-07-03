@@ -31,6 +31,7 @@ Hexagonal / Ports & Adapters. Подробности и пошаговый ре�
 - `internal/app/<фича>/` — только domain + stdlib. Вертикальные слайсы по фичам (`device/`, `status/`, `network/`), у каждой свой `ports.go` — интерфейсы объявляются рядом с потребителем, не в adapter.
 - `internal/adapter/primary/telegram/` — driving: middleware (auth-whitelist, log, base-context) → handler → use case → presenter.
 - `internal/adapter/secondary/{nftables,ubus,dhcp,thermal,librespeed,system}/` — driven: реализации портов через exec/чтение файлов.
+- `internal/adapter/secondary/jsondb/` — generic-движок «JSON-файл как коллекция» (конверт `{v, items}`, атомарная запись); `accessjson/` — фичевый адаптер хранилища доступа поверх него (оба порта sub-store'ами `Users()`/`Roles()` под одним локом). Новая сущность = новый фичевый адаптер, в движок и чужие адаптеры не лезем. Смена движка = пакет `accesssqlite` рядом + прогон контрактного сьюта `app/access/accesstest`.
 - `internal/platform/` — config (caarlos0/env), logger (slog), graceful shutdown.
 - `cmd/bot/main.go` — единственный composition root (паттерн `main → run() error`). Никто больше не создаёт свои зависимости сам.
 
@@ -41,7 +42,8 @@ Hexagonal / Ports & Adapters. Подробности и пошаговый ре�
 - **Все внешние команды — через `system.Runner`** (`ExecRunner`: типизированная `ExecError` с полем Stderr, `LC_ALL=C`), чтение файлов — через `system.FileReader`. Не звать `exec.Command` напрямую из адаптеров.
 - Adapters типизируют доменные ошибки на границе: nftables распознаёт `ErrAlreadyInSet`/`ErrNotInSet` строго по `ExecError.Stderr`.
 - **Только HTML-режим Telegram** (`tele.ModeHTML`) и `html.EscapeString` для внешних строк. Markdown в боте запрещён — необэкранированный `_` в имени speedtest-сервера уже ронял Edit (итерация 8 в ROADMAP).
-- Регистрация команды — одна строка в `commands()` в `router.go`: единый список питает и маршруты, и Telegram-меню (SetCommands).
+- Регистрация команды — одна строка в `commands()` в `router.go`: единый список питает маршруты, Telegram-меню (SetCommands), reply-клавиатуру И требуемое право. **Каждая команда закрыта Permission** (кроме /start); «нет пермишена = нет кнопки»: меню, клавиатура и inline-кнопки строятся от Grant актора (кладёт auth-middleware). Каталог прав — код (`domain/permission.go`), роли — данные.
+- Доступ: env `ADMIN_USER_ID` (ровно один ID) — только сид при старте; пользователи/роли живут в `DATABASE_DIR` и управляются через бота (approve-flow + /users). Use cases, мутирующие доступ, сами проверяют актора (`requireManager`) — guard в роутере лишь UX-слой.
 - `context.Context` первым параметром во всех use cases, портах и adapter-методах. Таймауты в handlers строятся от base-context из middleware (иначе ломается graceful shutdown).
 - Тесты — только stdlib `testing`, моки пишутся руками рядом с тестом. Тесты слоёв подчиняются тому же dependency rule (archtest обходит и `_test.go`).
 - Зависимости: только стабильные релизы, никаких beta/rc без явного согласия пользователя.

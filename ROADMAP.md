@@ -74,6 +74,14 @@
 - Dependency rule проверяется машинно: `internal/archtest` (domain → только stdlib; app → только domain). GitHub Actions: `make lint` + `make test` на каждый push/PR.
 - **Решение:** контракт `MACSetPort` с типизированными ошибками сознательно НЕ заменён на идемпотентный — «повторный бан = no-op» остаётся демонстрацией application rule в app-слое (см. README). Пересмотреть, если у Ban появится второе действие (deauth и т.п.).
 
+### Итерация 9 — RBAC-доступ: user-store, роли, approve-flow (2026-07-03)
+- **Авторизация переехала из env в данные**: `ALLOWED_USER_IDS` → `ADMIN_USER_ID` (ровно один ID, сид при старте, fail fast без него); пользователи и роли — в `/etc/openwrt-bot/database/json/{users,roles}.json`, управляются через бота. Env после первого старта не источник правды («есть юзер — до свидания»).
+- **Domain**: каталог `Permission` — КОД (право осмысленно только вместе с проверяющим его кодом: view_status, list_devices, run_speedtest, ban_devices, manage_vpn, manage_users); `Role` — ДАННЫЕ (имя + права, редактируются в рантайме); `User` со статусами pending/active (переход только `Approve`). role_has_permission — поле роли, не сущность: реляционную кодировку решает адаптер.
+- **app/access**: 10 use cases (Check → Grant для middleware; RequestAccess с дедупом; Approve/Reject; SetRole/RemoveUser с guard'ом последнего носителя manage_users; ListUsers/ListRoles; UpsertRole — скелетный, без ручки; Seed — встроенные роли + «политика догона» admin-роли до полного каталога при старте). Авторизация мутаций — в use cases (`requireManager`), не в handlers.
+- **Хранилище**: generic-движок `jsondb` (Collection[T], конверт `{v, items}` с версией схемы, атомарная запись tmp+fsync+rename через новый `system.FileWriter`) + фичевый адаптер `accessjson` (sub-store'ы `Users()`/`Roles()` под одним локом — имена методов портов остаются чистыми All/Get/Put/Delete). Контрактный сьют `access/accesstest`: смена движка = новый пакет + один вызов `Run`. Archtest: фиче разрешены её подпакеты.
+- **Telegram**: auth-middleware ходит в хранилище (fail closed) и кладёт `Grant` в контекст; `commands()` расширен правом и кнопкой клавиатуры — один список питает маршруты+меню+клавиатуру+guard. «Нет пермишена = нет кнопки»: reply-клавиатура, карточки устройств и меню «≡» (scoped SetCommands на чат) строятся от Grant. Approve-flow: /start незнакомца → заявка (любой другой текст — молчание, бота не палим) → админам карточка с кнопками → одобренному приглашение. `/users`: заявки, смена роли (пикер), удаление; сам актор без кнопок самоуправления.
+- **Деплой**: миграция руками не нужна — при первом старте новой версии Seed создаст роли и админа из `ADMIN_USER_ID`; остальные (на AX3200 — отец) проходят approve-flow заново и получают роль через /users.
+
 ## Следующее
 
 ### Дальше (когда понадобится)
