@@ -10,7 +10,7 @@ import (
 
 func TestRequestAccess_Execute_CreatesPendingAndListsAdmins(t *testing.T) {
 	store := defaultRolesStore()
-	uc := NewRequestAccess(store.Users(), store.Roles())
+	uc := NewRequestAccess(store)
 
 	out, err := uc.Execute(context.Background(), RequestAccessInput{UserID: 42, Name: "Батя"})
 	if err != nil {
@@ -34,7 +34,7 @@ func TestRequestAccess_Execute_CreatesPendingAndListsAdmins(t *testing.T) {
 // и не даёт повода спамить админов.
 func TestRequestAccess_Execute_Dedup(t *testing.T) {
 	store := defaultRolesStore(domain.NewPendingUser(42, "Батя"))
-	uc := NewRequestAccess(store.Users(), store.Roles())
+	uc := NewRequestAccess(store)
 
 	for _, id := range []int64{42, 1} { // 42 — pending, 1 — активный админ
 		out, err := uc.Execute(context.Background(), RequestAccessInput{UserID: id, Name: "x"})
@@ -49,7 +49,7 @@ func TestRequestAccess_Execute_Dedup(t *testing.T) {
 
 func TestRequestAccess_Execute_InvalidID(t *testing.T) {
 	store := defaultRolesStore()
-	uc := NewRequestAccess(store.Users(), store.Roles())
+	uc := NewRequestAccess(store)
 
 	if _, err := uc.Execute(context.Background(), RequestAccessInput{UserID: -5}); !errors.Is(err, domain.ErrInvalidUserID) {
 		t.Errorf("err = %v, want ErrInvalidUserID", err)

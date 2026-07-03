@@ -17,14 +17,16 @@ import (
 //   - env-админ существует и активен: нет — создаётся с ролью admin,
 //     есть — не трогается (env не источник правды после первого старта).
 //
-// Кастомные роли и остальные пользователи не трогаются никогда.
+// Кастомные роли и остальные пользователи не трогаются никогда. Побочная
+// гарантия: даже если данные каким-то образом остались без единого админа
+// (правка файла руками), удаление env-админа из users.json + рестарт бота —
+// штатный выход из локаута: Seed пересоздаст его админом.
 type Seed struct {
-	users UserStore
-	roles RoleStore
+	store Atomic
 }
 
-func NewSeed(users UserStore, roles RoleStore) *Seed {
-	return &Seed{users: users, roles: roles}
+func NewSeed(store Atomic) *Seed {
+	return &Seed{store: store}
 }
 
 type SeedInput struct {
@@ -36,34 +38,35 @@ func (uc *Seed) Execute(ctx context.Context, in SeedInput) error {
 	if err != nil {
 		return fmt.Errorf("ADMIN_USER_ID: %w", err)
 	}
-
-	for _, def := range domain.DefaultRoles() {
-		if err := uc.ensureRole(ctx, def); err != nil {
-			return err
+	return uc.store.Update(ctx, func(users UserStore, roles RoleStore) error {
+		for _, def := range domain.DefaultRoles() {
+			if err := ensureRole(ctx, roles, def); err != nil {
+				return err
+			}
 		}
-	}
 
-	switch _, err := uc.users.Get(ctx, adminID); {
-	case err == nil:
-		return nil // есть — до свидания: env после первого старта не источник правды
-	case !errors.Is(err, domain.ErrUserNotFound):
-		return fmt.Errorf("get admin %d: %w", adminID, err)
-	}
-	admin := domain.NewActiveUser(adminID, "", domain.RoleAdmin)
-	if err := uc.users.Put(ctx, admin); err != nil {
-		return fmt.Errorf("seed admin %d: %w", adminID, err)
-	}
-	return nil
+		switch _, err := users.Get(ctx, adminID); {
+		case err == nil:
+			return nil // есть — до свидания: env после первого старта не источник правды
+		case !errors.Is(err, domain.ErrUserNotFound):
+			return fmt.Errorf("get admin %d: %w", adminID, err)
+		}
+		admin := domain.NewActiveUser(adminID, "", domain.RoleAdmin)
+		if err := users.Put(ctx, admin); err != nil {
+			return fmt.Errorf("seed admin %d: %w", adminID, err)
+		}
+		return nil
+	})
 }
 
 // ensureRole создаёт отсутствующую встроенную роль; существующую admin
 // дополняет до полного каталога (union, идемпотентно), user не трогает —
 // её права после bootstrap'а принадлежат данным.
-func (uc *Seed) ensureRole(ctx context.Context, def domain.Role) error {
-	stored, err := uc.roles.Get(ctx, def.Name)
+func ensureRole(ctx context.Context, roles RoleStore, def domain.Role) error {
+	stored, err := roles.Get(ctx, def.Name)
 	switch {
 	case errors.Is(err, domain.ErrRoleNotFound):
-		if err := uc.roles.Put(ctx, def); err != nil {
+		if err := roles.Put(ctx, def); err != nil {
 			return fmt.Errorf("seed role %q: %w", def.Name, err)
 		}
 		return nil
@@ -82,7 +85,7 @@ func (uc *Seed) ensureRole(ctx context.Context, def domain.Role) error {
 	if !changed {
 		return nil
 	}
-	if err := uc.roles.Put(ctx, stored); err != nil {
+	if err := roles.Put(ctx, stored); err != nil {
 		return fmt.Errorf("update role %q: %w", stored.Name, err)
 	}
 	return nil

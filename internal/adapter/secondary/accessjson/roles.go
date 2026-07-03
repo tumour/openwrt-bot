@@ -9,21 +9,15 @@ import (
 	"github.com/tumour/openwrt-bot/internal/domain"
 )
 
-// roleStore — sub-store: реализация access.RoleStore поверх общего Store
-// (коллекция roles.json под общим локом).
-type roleStore struct{ s *Store }
+// txRoles — access.RoleStore внутри транзакции: операции над снапшотом,
+// файл пишет коммит Update.
+type txRoles struct{ tx *txState }
 
-var _ access.RoleStore = roleStore{}
+var _ access.RoleStore = txRoles{}
 
-func (v roleStore) All(ctx context.Context) ([]domain.Role, error) {
-	v.s.mu.Lock()
-	defer v.s.mu.Unlock()
-	recs, err := v.s.roles.Load(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]domain.Role, 0, len(recs))
-	for _, rec := range recs {
+func (t txRoles) All(context.Context) ([]domain.Role, error) {
+	out := make([]domain.Role, 0, len(t.tx.roles))
+	for _, rec := range t.tx.roles {
 		r, err := rec.toDomain()
 		if err != nil {
 			return nil, err
@@ -33,42 +27,62 @@ func (v roleStore) All(ctx context.Context) ([]domain.Role, error) {
 	return out, nil
 }
 
-func (v roleStore) Get(ctx context.Context, name domain.RoleName) (domain.Role, error) {
-	v.s.mu.Lock()
-	defer v.s.mu.Unlock()
-	recs, err := v.s.roles.Load(ctx)
-	if err != nil {
-		return domain.Role{}, err
-	}
-	rec, ok := jsondb.Find(recs, byRoleName(name))
+func (t txRoles) Get(_ context.Context, name domain.RoleName) (domain.Role, error) {
+	rec, ok := jsondb.Find(t.tx.roles, byRoleName(name))
 	if !ok {
 		return domain.Role{}, fmt.Errorf("%w: %q", domain.ErrRoleNotFound, name)
 	}
 	return rec.toDomain()
 }
 
-func (v roleStore) Put(ctx context.Context, r domain.Role) error {
-	v.s.mu.Lock()
-	defer v.s.mu.Unlock()
-	recs, err := v.s.roles.Load(ctx)
-	if err != nil {
-		return err
-	}
-	return v.s.roles.Save(ctx, jsondb.Upsert(recs, byRoleName(r.Name), roleRecordFrom(r)))
+func (t txRoles) Put(_ context.Context, r domain.Role) error {
+	t.tx.roles = jsondb.Upsert(t.tx.roles, byRoleName(r.Name), roleRecordFrom(r))
+	t.tx.rolesDirty = true
+	return nil
 }
 
-func (v roleStore) Delete(ctx context.Context, name domain.RoleName) error {
-	v.s.mu.Lock()
-	defer v.s.mu.Unlock()
-	recs, err := v.s.roles.Load(ctx)
-	if err != nil {
-		return err
-	}
-	rest, ok := jsondb.Remove(recs, byRoleName(name))
+func (t txRoles) Delete(_ context.Context, name domain.RoleName) error {
+	rest, ok := jsondb.Remove(t.tx.roles, byRoleName(name))
 	if !ok {
 		return fmt.Errorf("%w: %q", domain.ErrRoleNotFound, name)
 	}
-	return v.s.roles.Save(ctx, rest)
+	t.tx.roles = rest
+	t.tx.rolesDirty = true
+	return nil
+}
+
+// roleStore — access.RoleStore вне транзакции: каждая операция — транзакция
+// из одного действия.
+type roleStore struct{ s *Store }
+
+var _ access.RoleStore = roleStore{}
+
+func (v roleStore) All(ctx context.Context) (out []domain.Role, err error) {
+	err = v.s.Update(ctx, func(_ access.UserStore, roles access.RoleStore) error {
+		out, err = roles.All(ctx)
+		return err
+	})
+	return out, err
+}
+
+func (v roleStore) Get(ctx context.Context, name domain.RoleName) (out domain.Role, err error) {
+	err = v.s.Update(ctx, func(_ access.UserStore, roles access.RoleStore) error {
+		out, err = roles.Get(ctx, name)
+		return err
+	})
+	return out, err
+}
+
+func (v roleStore) Put(ctx context.Context, r domain.Role) error {
+	return v.s.Update(ctx, func(_ access.UserStore, roles access.RoleStore) error {
+		return roles.Put(ctx, r)
+	})
+}
+
+func (v roleStore) Delete(ctx context.Context, name domain.RoleName) error {
+	return v.s.Update(ctx, func(_ access.UserStore, roles access.RoleStore) error {
+		return roles.Delete(ctx, name)
+	})
 }
 
 func byRoleName(name domain.RoleName) func(roleRecord) bool {

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/system"
-	"github.com/tumour/openwrt-bot/internal/app/access"
 	"github.com/tumour/openwrt-bot/internal/app/access/accesstest"
 	"github.com/tumour/openwrt-bot/internal/domain"
 )
@@ -24,11 +23,12 @@ func newTestStore(t *testing.T) (*Store, string) {
 }
 
 // Контракт портов: адаптер обязан вести себя неотличимо от любого другого
-// хранилища фичи access. Будущий accesssqlite прогонит ровно этот же сьют.
+// хранилища фичи access (включая rollback и сериализацию Update).
+// Будущий accesssqlite прогонит ровно этот же сьют.
 func TestStore_Contract(t *testing.T) {
-	accesstest.Run(t, func(t *testing.T) (access.UserStore, access.RoleStore) {
+	accesstest.Run(t, func(t *testing.T) accesstest.Stores {
 		s, _ := newTestStore(t)
-		return s.Users(), s.Roles()
+		return accesstest.Stores{Atomic: s, Users: s.Users(), Roles: s.Roles()}
 	})
 }
 

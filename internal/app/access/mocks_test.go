@@ -3,19 +3,36 @@ package access
 import (
 	"context"
 	"fmt"
+	"maps"
+	"sync"
 
 	"github.com/tumour/openwrt-bot/internal/domain"
 )
 
 // memStore — in-memory хранилище для тестов, зеркалит форму боевого адаптера:
 // одно хранилище, порты наружу — sub-store'ами Users()/Roles() (в Go у одного
-// типа не может быть двух методов All с разными сигнатурами).
+// типа не может быть двух методов All с разными сигнатурами), мутации — через
+// Update (Atomic) с честным rollback'ом, как обещает контракт порта.
 // failUsers/failRoles инжектят инфраструктурную ошибку в операции коллекции.
 type memStore struct {
+	mu        sync.Mutex
 	users     map[domain.UserID]domain.User
 	roles     map[domain.RoleName]domain.Role
 	failUsers error
 	failRoles error
+}
+
+// Update — access.Atomic: сериализация мьютексом + откат снапшотом при ошибке.
+func (s *memStore) Update(_ context.Context, fn func(UserStore, RoleStore) error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	usersBackup := maps.Clone(s.users)
+	rolesBackup := maps.Clone(s.roles)
+	if err := fn(memUsers{s}, memRoles{s}); err != nil {
+		s.users, s.roles = usersBackup, rolesBackup
+		return err
+	}
+	return nil
 }
 
 func newMemStore(users []domain.User, roles []domain.Role) *memStore {

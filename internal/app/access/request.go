@@ -12,12 +12,11 @@ import (
 // rule: повторная заявка (и /start от уже допущенного) = no-op — админа не
 // спамим, Created=false. Admins в выводе — кого уведомить о новой заявке.
 type RequestAccess struct {
-	users UserStore
-	roles RoleStore
+	store Atomic
 }
 
-func NewRequestAccess(users UserStore, roles RoleStore) *RequestAccess {
-	return &RequestAccess{users: users, roles: roles}
+func NewRequestAccess(store Atomic) *RequestAccess {
+	return &RequestAccess{store: store}
 }
 
 type (
@@ -37,20 +36,25 @@ func (uc *RequestAccess) Execute(ctx context.Context, in RequestAccessInput) (Re
 	if err != nil {
 		return RequestAccessOutput{}, err
 	}
-	switch _, err := uc.users.Get(ctx, id); {
-	case err == nil:
-		return RequestAccessOutput{}, nil // уже есть (pending или active) — дедуп
-	case !errors.Is(err, domain.ErrUserNotFound):
-		return RequestAccessOutput{}, fmt.Errorf("get user %d: %w", id, err)
-	}
+	var out RequestAccessOutput
+	err = uc.store.Update(ctx, func(users UserStore, roles RoleStore) error {
+		switch _, err := users.Get(ctx, id); {
+		case err == nil:
+			return nil // уже есть (pending или active) — дедуп
+		case !errors.Is(err, domain.ErrUserNotFound):
+			return fmt.Errorf("get user %d: %w", id, err)
+		}
 
-	u := domain.NewPendingUser(id, in.Name)
-	if err := uc.users.Put(ctx, u); err != nil {
-		return RequestAccessOutput{}, fmt.Errorf("put pending user %d: %w", id, err)
-	}
-	admins, err := managers(ctx, uc.users, uc.roles)
-	if err != nil {
-		return RequestAccessOutput{}, err
-	}
-	return RequestAccessOutput{Created: true, User: u, Admins: admins}, nil
+		u := domain.NewPendingUser(id, in.Name)
+		if err := users.Put(ctx, u); err != nil {
+			return fmt.Errorf("put pending user %d: %w", id, err)
+		}
+		admins, err := managers(ctx, users, roles)
+		if err != nil {
+			return err
+		}
+		out = RequestAccessOutput{Created: true, User: u, Admins: admins}
+		return nil
+	})
+	return out, err
 }

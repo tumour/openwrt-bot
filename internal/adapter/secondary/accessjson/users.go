@@ -9,21 +9,15 @@ import (
 	"github.com/tumour/openwrt-bot/internal/domain"
 )
 
-// userStore — sub-store: реализация access.UserStore поверх общего Store
-// (коллекция users.json под общим локом).
-type userStore struct{ s *Store }
+// txUsers — access.UserStore внутри транзакции: операции над снапшотом,
+// файл пишет коммит Update.
+type txUsers struct{ tx *txState }
 
-var _ access.UserStore = userStore{}
+var _ access.UserStore = txUsers{}
 
-func (v userStore) All(ctx context.Context) ([]domain.User, error) {
-	v.s.mu.Lock()
-	defer v.s.mu.Unlock()
-	recs, err := v.s.users.Load(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]domain.User, 0, len(recs))
-	for _, rec := range recs {
+func (t txUsers) All(context.Context) ([]domain.User, error) {
+	out := make([]domain.User, 0, len(t.tx.users))
+	for _, rec := range t.tx.users {
 		u, err := rec.toDomain()
 		if err != nil {
 			return nil, err
@@ -33,42 +27,62 @@ func (v userStore) All(ctx context.Context) ([]domain.User, error) {
 	return out, nil
 }
 
-func (v userStore) Get(ctx context.Context, id domain.UserID) (domain.User, error) {
-	v.s.mu.Lock()
-	defer v.s.mu.Unlock()
-	recs, err := v.s.users.Load(ctx)
-	if err != nil {
-		return domain.User{}, err
-	}
-	rec, ok := jsondb.Find(recs, byUserID(id))
+func (t txUsers) Get(_ context.Context, id domain.UserID) (domain.User, error) {
+	rec, ok := jsondb.Find(t.tx.users, byUserID(id))
 	if !ok {
 		return domain.User{}, fmt.Errorf("%w: %d", domain.ErrUserNotFound, id)
 	}
 	return rec.toDomain()
 }
 
-func (v userStore) Put(ctx context.Context, u domain.User) error {
-	v.s.mu.Lock()
-	defer v.s.mu.Unlock()
-	recs, err := v.s.users.Load(ctx)
-	if err != nil {
-		return err
-	}
-	return v.s.users.Save(ctx, jsondb.Upsert(recs, byUserID(u.ID), userRecordFrom(u)))
+func (t txUsers) Put(_ context.Context, u domain.User) error {
+	t.tx.users = jsondb.Upsert(t.tx.users, byUserID(u.ID), userRecordFrom(u))
+	t.tx.usersDirty = true
+	return nil
 }
 
-func (v userStore) Delete(ctx context.Context, id domain.UserID) error {
-	v.s.mu.Lock()
-	defer v.s.mu.Unlock()
-	recs, err := v.s.users.Load(ctx)
-	if err != nil {
-		return err
-	}
-	rest, ok := jsondb.Remove(recs, byUserID(id))
+func (t txUsers) Delete(_ context.Context, id domain.UserID) error {
+	rest, ok := jsondb.Remove(t.tx.users, byUserID(id))
 	if !ok {
 		return fmt.Errorf("%w: %d", domain.ErrUserNotFound, id)
 	}
-	return v.s.users.Save(ctx, rest)
+	t.tx.users = rest
+	t.tx.usersDirty = true
+	return nil
+}
+
+// userStore — access.UserStore вне транзакции: каждая операция — транзакция
+// из одного действия (тот же Update, никакой второй механики хранения).
+type userStore struct{ s *Store }
+
+var _ access.UserStore = userStore{}
+
+func (v userStore) All(ctx context.Context) (out []domain.User, err error) {
+	err = v.s.Update(ctx, func(users access.UserStore, _ access.RoleStore) error {
+		out, err = users.All(ctx)
+		return err
+	})
+	return out, err
+}
+
+func (v userStore) Get(ctx context.Context, id domain.UserID) (out domain.User, err error) {
+	err = v.s.Update(ctx, func(users access.UserStore, _ access.RoleStore) error {
+		out, err = users.Get(ctx, id)
+		return err
+	})
+	return out, err
+}
+
+func (v userStore) Put(ctx context.Context, u domain.User) error {
+	return v.s.Update(ctx, func(users access.UserStore, _ access.RoleStore) error {
+		return users.Put(ctx, u)
+	})
+}
+
+func (v userStore) Delete(ctx context.Context, id domain.UserID) error {
+	return v.s.Update(ctx, func(users access.UserStore, _ access.RoleStore) error {
+		return users.Delete(ctx, id)
+	})
 }
 
 func byUserID(id domain.UserID) func(userRecord) bool {

@@ -83,7 +83,7 @@ func run() error {
 	if err := accessStore.Init(ctx); err != nil {
 		return fmt.Errorf("access store: %w", err)
 	}
-	if err := access.NewSeed(users, roles).Execute(ctx, access.SeedInput{AdminID: cfg.AdminUserID}); err != nil {
+	if err := access.NewSeed(accessStore).Execute(ctx, access.SeedInput{AdminID: cfg.AdminUserID}); err != nil {
 		return fmt.Errorf("access seed: %w", err)
 	}
 
@@ -96,14 +96,15 @@ func run() error {
 		SpeedTest: handler.NewSpeedTest(speedTestUC),
 		VPNOff:    handler.NewVPNOff(vpnOffUC),
 		VPNOn:     handler.NewVPNOn(vpnOnUC),
+		// Мутирующие use cases получают Atomic (unit of work), читающие — сторы.
 		Access: handler.NewAccess(
-			access.NewRequestAccess(users, roles),
-			access.NewApprove(users, roles),
-			access.NewReject(users, roles),
+			access.NewRequestAccess(accessStore),
+			access.NewApprove(accessStore),
+			access.NewReject(accessStore),
 			access.NewListUsers(users, roles),
 			access.NewListRoles(users, roles),
-			access.NewSetRole(users, roles),
-			access.NewRemoveUser(users, roles),
+			access.NewSetRole(accessStore),
+			access.NewRemoveUser(accessStore),
 		),
 	}
 

@@ -1,9 +1,9 @@
-// Package accessjson — JSON-реализация портов access.UserStore и
-// access.RoleStore поверх движка jsondb: <dir>/users.json и <dir>/roles.json,
-// где dir — каталог движка (…/database/json). Пакет владеет ТОЛЬКО своими
-// файлами и маппингом record↔domain; вся механика хранения — в jsondb.
-// Смена движка завтра = пакет accesssqlite рядом, совместимость доказывает
-// общий контрактный сьют (access/accesstest).
+// Package accessjson — JSON-реализация портов фичи access (Atomic +
+// UserStore + RoleStore) поверх движка jsondb: <dir>/users.json и
+// <dir>/roles.json, где dir — каталог движка (…/database/json). Пакет
+// владеет ТОЛЬКО своими файлами и маппингом record↔domain; механика
+// хранения — в jsondb. Смена движка завтра = пакет accesssqlite рядом,
+// совместимость доказывает общий контрактный сьют (access/accesstest).
 package accessjson
 
 import (
@@ -20,11 +20,11 @@ import (
 // Меняется при несовместимой правке userRecord/roleRecord.
 const schemaVersion = 1
 
-// Store — одно хранилище на всю фичу access: обе коллекции, один мьютекс
-// (операция над users видит согласованное с roles состояние и наоборот).
-// Порты наружу отдаются sub-store'ами Users()/Roles(): у одного Go-типа не
-// может быть двух методов All с разными сигнатурами, а порты обязаны
-// оставаться чистыми (All/Get/Put/Delete, без заикания UserStore.AllUsers).
+// Store — одно хранилище на всю фичу access. Единица работы — транзакция
+// Update: обе коллекции читаются в память, колбэк работает со снапшотом,
+// файлы перезаписываются только при успехе (ошибка = rollback, как в SQL).
+// Мьютекс сериализует транзакции; одиночные операции портов — те же
+// транзакции из одной операции (Users()/Roles() — тонкие обёртки).
 type Store struct {
 	mu    sync.Mutex
 	users jsondb.Collection[userRecord]
@@ -32,6 +32,9 @@ type Store struct {
 	dir   string
 	w     system.FileWriter
 }
+
+// Компайл-тайм гарантия соответствия портам.
+var _ access.Atomic = (*Store)(nil)
 
 func New(r system.FileReader, w system.FileWriter, dir string) *Store {
 	return &Store{
@@ -52,4 +55,47 @@ func (s *Store) Roles() access.RoleStore { return roleStore{s} }
 // composition root до Seed.
 func (s *Store) Init(ctx context.Context) error {
 	return s.w.MkdirAll(ctx, s.dir, 0o700)
+}
+
+// Update — access.Atomic: fn выполняется над снапшотом обеих коллекций под
+// мьютексом; файлы пишутся только если fn вернул nil (и только изменённые).
+// ВАЖНО: внутри fn пользоваться переданными сторами — вызов s.Users()/Roles()
+// из колбэка взял бы тот же мьютекс повторно (дедлок, о нём предупреждает
+// и контракт порта).
+func (s *Store) Update(ctx context.Context, fn func(access.UserStore, access.RoleStore) error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	users, err := s.users.Load(ctx)
+	if err != nil {
+		return err
+	}
+	roles, err := s.roles.Load(ctx)
+	if err != nil {
+		return err
+	}
+	tx := &txState{users: users, roles: roles}
+	if err := fn(txUsers{tx}, txRoles{tx}); err != nil {
+		return err // rollback: файлы не тронуты
+	}
+	if tx.usersDirty {
+		if err := s.users.Save(ctx, tx.users); err != nil {
+			return err
+		}
+	}
+	if tx.rolesDirty {
+		if err := s.roles.Save(ctx, tx.roles); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// txState — рабочий снапшот транзакции: колбэк мутирует записи в памяти,
+// dirty-флаги решают, какие файлы переписывать при коммите.
+type txState struct {
+	users      []userRecord
+	roles      []roleRecord
+	usersDirty bool
+	rolesDirty bool
 }

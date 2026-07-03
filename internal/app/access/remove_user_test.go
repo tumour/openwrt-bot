@@ -13,7 +13,7 @@ func TestRemoveUser_Execute_OK(t *testing.T) {
 		domain.NewActiveUser(2, "гость", domain.RoleUser),
 		domain.NewPendingUser(3, "заявка"),
 	)
-	uc := NewRemoveUser(store.Users(), store.Roles())
+	uc := NewRemoveUser(store)
 	ctx := context.Background()
 
 	for _, target := range []domain.UserID{2, 3} { // активный и pending
@@ -28,7 +28,7 @@ func TestRemoveUser_Execute_OK(t *testing.T) {
 
 func TestRemoveUser_Execute_LastAdminGuard(t *testing.T) {
 	store := defaultRolesStore()
-	uc := NewRemoveUser(store.Users(), store.Roles())
+	uc := NewRemoveUser(store)
 	ctx := context.Background()
 
 	// Единственный админ удаляет сам себя — бот остался бы неуправляемым.
@@ -47,7 +47,7 @@ func TestRemoveUser_Execute_LastAdminGuard(t *testing.T) {
 
 func TestRemoveUser_Execute_Forbidden(t *testing.T) {
 	store := defaultRolesStore(domain.NewActiveUser(2, "гость", domain.RoleUser))
-	uc := NewRemoveUser(store.Users(), store.Roles())
+	uc := NewRemoveUser(store)
 
 	if _, err := uc.Execute(context.Background(), RemoveUserInput{ActorID: 2, TargetID: 1}); !errors.Is(err, domain.ErrForbidden) {
 		t.Errorf("err = %v, want ErrForbidden", err)

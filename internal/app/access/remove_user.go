@@ -9,14 +9,15 @@ import (
 
 // RemoveUser — use case «удалить пользователя» (активного или заявку).
 // Только носитель manage_users. Guard: последнего носителя manage_users
-// удалить нельзя (ErrLastAdmin) — в т.ч. самого себя.
+// удалить нельзя (ErrLastAdmin) — в т.ч. самого себя. Guard и удаление —
+// одна атомарная единица: два админа, одновременно удаляющие друг друга,
+// не оставят бота без управления (второй получит ErrLastAdmin).
 type RemoveUser struct {
-	users UserStore
-	roles RoleStore
+	store Atomic
 }
 
-func NewRemoveUser(users UserStore, roles RoleStore) *RemoveUser {
-	return &RemoveUser{users: users, roles: roles}
+func NewRemoveUser(store Atomic) *RemoveUser {
+	return &RemoveUser{store: store}
 }
 
 type (
@@ -30,20 +31,25 @@ type (
 )
 
 func (uc *RemoveUser) Execute(ctx context.Context, in RemoveUserInput) (RemoveUserOutput, error) {
-	if err := requireManager(ctx, uc.users, uc.roles, in.ActorID); err != nil {
-		return RemoveUserOutput{}, err
-	}
-	u, err := uc.users.Get(ctx, in.TargetID)
-	if err != nil {
-		return RemoveUserOutput{}, fmt.Errorf("get user %d: %w", in.TargetID, err)
-	}
-	if u.IsActive() {
-		if err := ensureNotLastManager(ctx, uc.users, uc.roles, u.ID); err != nil {
-			return RemoveUserOutput{}, err
+	var out RemoveUserOutput
+	err := uc.store.Update(ctx, func(users UserStore, roles RoleStore) error {
+		if err := requireManager(ctx, users, roles, in.ActorID); err != nil {
+			return err
 		}
-	}
-	if err := uc.users.Delete(ctx, in.TargetID); err != nil {
-		return RemoveUserOutput{}, fmt.Errorf("delete user %d: %w", in.TargetID, err)
-	}
-	return RemoveUserOutput{User: u}, nil
+		u, err := users.Get(ctx, in.TargetID)
+		if err != nil {
+			return fmt.Errorf("get user %d: %w", in.TargetID, err)
+		}
+		if u.IsActive() {
+			if err := ensureNotLastManager(ctx, users, roles, u.ID); err != nil {
+				return err
+			}
+		}
+		if err := users.Delete(ctx, in.TargetID); err != nil {
+			return fmt.Errorf("delete user %d: %w", in.TargetID, err)
+		}
+		out = RemoveUserOutput{User: u}
+		return nil
+	})
+	return out, err
 }

@@ -10,7 +10,7 @@ import (
 
 func TestSeed_Execute_FreshStore(t *testing.T) {
 	store := newMemStore(nil, nil)
-	uc := NewSeed(store.Users(), store.Roles())
+	uc := NewSeed(store)
 	ctx := context.Background()
 
 	if err := uc.Execute(ctx, SeedInput{AdminID: 680982436}); err != nil {
@@ -32,7 +32,7 @@ func TestSeed_Execute_FreshStore(t *testing.T) {
 func TestSeed_Execute_ExistingAdminUntouched(t *testing.T) {
 	demoted := domain.NewActiveUser(680982436, "разжалован", domain.RoleUser)
 	store := newMemStore([]domain.User{demoted}, domain.DefaultRoles())
-	uc := NewSeed(store.Users(), store.Roles())
+	uc := NewSeed(store)
 	ctx := context.Background()
 
 	if err := uc.Execute(ctx, SeedInput{AdminID: 680982436}); err != nil {
@@ -50,7 +50,7 @@ func TestSeed_Execute_AdminRoleCatchUp(t *testing.T) {
 	staleAdmin := domain.Role{Name: domain.RoleAdmin, Permissions: []domain.Permission{domain.PermViewStatus}}
 	customUser := domain.Role{Name: domain.RoleUser, Permissions: []domain.Permission{domain.PermViewStatus}}
 	store := newMemStore(nil, []domain.Role{staleAdmin, customUser})
-	uc := NewSeed(store.Users(), store.Roles())
+	uc := NewSeed(store)
 	ctx := context.Background()
 
 	if err := uc.Execute(ctx, SeedInput{AdminID: 1}); err != nil {
@@ -70,7 +70,7 @@ func TestSeed_Execute_AdminRoleCatchUp(t *testing.T) {
 
 func TestSeed_Execute_Idempotent(t *testing.T) {
 	store := newMemStore(nil, nil)
-	uc := NewSeed(store.Users(), store.Roles())
+	uc := NewSeed(store)
 	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
@@ -87,7 +87,7 @@ func TestSeed_Execute_Idempotent(t *testing.T) {
 
 func TestSeed_Execute_InvalidAdminID(t *testing.T) {
 	store := newMemStore(nil, nil)
-	uc := NewSeed(store.Users(), store.Roles())
+	uc := NewSeed(store)
 
 	for _, id := range []int64{0, -1} {
 		if err := uc.Execute(context.Background(), SeedInput{AdminID: id}); !errors.Is(err, domain.ErrInvalidUserID) {

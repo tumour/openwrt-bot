@@ -10,7 +10,7 @@ import (
 
 func TestSetRole_Execute_Promote(t *testing.T) {
 	store := defaultRolesStore(domain.NewActiveUser(2, "гость", domain.RoleUser))
-	uc := NewSetRole(store.Users(), store.Roles())
+	uc := NewSetRole(store)
 
 	out, err := uc.Execute(context.Background(), SetRoleInput{ActorID: 1, TargetID: 2, Role: domain.RoleAdmin})
 	if err != nil {
@@ -25,7 +25,7 @@ func TestSetRole_Execute_Promote(t *testing.T) {
 // нельзя, а одного из двух — можно.
 func TestSetRole_Execute_LastAdminGuard(t *testing.T) {
 	store := defaultRolesStore() // один админ id=1
-	uc := NewSetRole(store.Users(), store.Roles())
+	uc := NewSetRole(store)
 
 	if _, err := uc.Execute(context.Background(), SetRoleInput{ActorID: 1, TargetID: 1, Role: domain.RoleUser}); !errors.Is(err, domain.ErrLastAdmin) {
 		t.Errorf("err = %v, want ErrLastAdmin", err)
@@ -46,7 +46,7 @@ func TestSetRole_Execute_Errors(t *testing.T) {
 		domain.NewActiveUser(2, "гость", domain.RoleUser),
 		domain.NewPendingUser(3, "заявка"),
 	)
-	uc := NewSetRole(store.Users(), store.Roles())
+	uc := NewSetRole(store)
 	ctx := context.Background()
 
 	if _, err := uc.Execute(ctx, SetRoleInput{ActorID: 1, TargetID: 2, Role: "ghost"}); !errors.Is(err, domain.ErrRoleNotFound) {
@@ -62,7 +62,7 @@ func TestSetRole_Execute_Errors(t *testing.T) {
 
 func TestSetRole_Execute_SameRole_IsNoOp(t *testing.T) {
 	store := defaultRolesStore(domain.NewActiveUser(2, "гость", domain.RoleUser))
-	uc := NewSetRole(store.Users(), store.Roles())
+	uc := NewSetRole(store)
 
 	out, err := uc.Execute(context.Background(), SetRoleInput{ActorID: 1, TargetID: 2, Role: domain.RoleUser})
 	if err != nil {

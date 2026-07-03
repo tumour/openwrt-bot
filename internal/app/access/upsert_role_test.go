@@ -10,7 +10,7 @@ import (
 
 func TestUpsertRole_Execute_CreatesRole(t *testing.T) {
 	store := defaultRolesStore()
-	uc := NewUpsertRole(store.Users(), store.Roles())
+	uc := NewUpsertRole(store)
 
 	out, err := uc.Execute(context.Background(), UpsertRoleInput{
 		ActorID:     1,
@@ -30,7 +30,7 @@ func TestUpsertRole_Execute_CreatesRole(t *testing.T) {
 
 func TestUpsertRole_Execute_UnknownPermission(t *testing.T) {
 	store := defaultRolesStore()
-	uc := NewUpsertRole(store.Users(), store.Roles())
+	uc := NewUpsertRole(store)
 
 	if _, err := uc.Execute(context.Background(), UpsertRoleInput{ActorID: 1, Name: "x", Permissions: []string{"fly_to_moon"}}); !errors.Is(err, domain.ErrUnknownPermission) {
 		t.Errorf("err = %v, want ErrUnknownPermission", err)
@@ -41,7 +41,7 @@ func TestUpsertRole_Execute_UnknownPermission(t *testing.T) {
 // бот остался бы неуправляемым. Но при живом носителе на ДРУГОЙ роли — можно.
 func TestUpsertRole_Execute_LastAdminGuard(t *testing.T) {
 	store := defaultRolesStore()
-	uc := NewUpsertRole(store.Users(), store.Roles())
+	uc := NewUpsertRole(store)
 	ctx := context.Background()
 
 	in := UpsertRoleInput{ActorID: 1, Name: string(domain.RoleAdmin), Permissions: []string{"view_status"}}

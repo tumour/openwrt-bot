@@ -10,7 +10,7 @@ import (
 
 func TestApprove_Execute_OK(t *testing.T) {
 	store := defaultRolesStore(domain.NewPendingUser(42, "Батя"))
-	uc := NewApprove(store.Users(), store.Roles())
+	uc := NewApprove(store)
 
 	out, err := uc.Execute(context.Background(), ApproveInput{ActorID: 1, TargetID: 42})
 	if err != nil {
@@ -31,7 +31,7 @@ func TestApprove_Execute_Forbidden(t *testing.T) {
 		domain.NewPendingUser(3, "заявка"),
 		domain.NewPendingUser(42, "Батя"),
 	)
-	uc := NewApprove(store.Users(), store.Roles())
+	uc := NewApprove(store)
 
 	// Актор без manage_users и актор-pending — оба запрещены.
 	for _, actor := range []domain.UserID{2, 3, 99} {
@@ -43,7 +43,7 @@ func TestApprove_Execute_Forbidden(t *testing.T) {
 
 func TestApprove_Execute_TargetErrors(t *testing.T) {
 	store := defaultRolesStore(domain.NewActiveUser(2, "уже активен", domain.RoleUser))
-	uc := NewApprove(store.Users(), store.Roles())
+	uc := NewApprove(store)
 
 	if _, err := uc.Execute(context.Background(), ApproveInput{ActorID: 1, TargetID: 99}); !errors.Is(err, domain.ErrUserNotFound) {
 		t.Errorf("нет цели: err = %v, want ErrUserNotFound", err)
@@ -61,7 +61,7 @@ func TestApprove_Execute_DefaultRoleMissing(t *testing.T) {
 		[]domain.User{admin, domain.NewPendingUser(42, "Батя")},
 		[]domain.Role{adminRole}, // роли user нет
 	)
-	uc := NewApprove(store.Users(), store.Roles())
+	uc := NewApprove(store)
 
 	if _, err := uc.Execute(context.Background(), ApproveInput{ActorID: 1, TargetID: 42}); !errors.Is(err, domain.ErrRoleNotFound) {
 		t.Errorf("err = %v, want ErrRoleNotFound", err)
