@@ -22,6 +22,7 @@ var (
 	ErrUserNotFound      = errors.New("user not found")
 	ErrRoleNotFound      = errors.New("role not found")
 	ErrNotPending        = errors.New("user is not pending")
+	ErrNotActive         = errors.New("user is not active")
 	// ErrForbidden — у инициатора операции нет требуемого права (или он не активен).
 	ErrForbidden = errors.New("operation is not permitted")
 	// ErrLastAdmin — операция оставила бы бота без единого активного носителя
