@@ -159,17 +159,25 @@ func (h *Access) handleReject(c tele.Context) error {
 	return respondEdit(c, "🚫 Заявка отклонена: "+presenter.UserButtonLabel(out.User), &tele.CallbackResponse{Text: "🚫 Отклонена"})
 }
 
-// handleUsersRefresh — «Обновить» на экране /users.
+// handleUsersRefresh — «Обновить» на экране /users: перерисовка + ответ на
+// callback. Из других handlers НЕ вызывать — на один callback Telegram
+// принимает ровно один Respond (второй = Bad Request); им нужен
+// refreshUsersScreen.
 func (h *Access) handleUsersRefresh(c tele.Context) error {
-	text, markup, err := h.usersScreen(c)
-	if err != nil {
+	if err := h.refreshUsersScreen(c); err != nil {
 		_ = c.Respond(&tele.CallbackResponse{Text: "⚠ Не получилось"})
-		return fmt.Errorf("users refresh: %w", err)
-	}
-	if err := editKeepalive(c, text, markup); err != nil {
 		return err
 	}
 	return c.Respond()
+}
+
+// refreshUsersScreen перерисовывает экран /users БЕЗ ответа на callback.
+func (h *Access) refreshUsersScreen(c tele.Context) error {
+	text, markup, err := h.usersScreen(c)
+	if err != nil {
+		return fmt.Errorf("users refresh: %w", err)
+	}
+	return editKeepalive(c, text, markup)
 }
 
 // handleRolePicker — «🎭»: показать выбор роли для пользователя.
@@ -227,7 +235,7 @@ func (h *Access) handleSetRole(c tele.Context) error {
 		return fmt.Errorf("set role %d→%s: %w", target, role, err)
 	}
 	_ = c.Respond(&tele.CallbackResponse{Text: "🎭 Роль обновлена"})
-	return h.handleUsersRefresh(c)
+	return h.refreshUsersScreen(c)
 }
 
 func (h *Access) handleRemove(c tele.Context) error {
@@ -250,7 +258,7 @@ func (h *Access) handleRemove(c tele.Context) error {
 		return fmt.Errorf("remove %d: %w", target, err)
 	}
 	_ = c.Respond(&tele.CallbackResponse{Text: "🗑 Удалён"})
-	return h.handleUsersRefresh(c)
+	return h.refreshUsersScreen(c)
 }
 
 // --- сборка экрана и разметок ---
