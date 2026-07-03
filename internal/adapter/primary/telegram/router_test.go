@@ -1,13 +1,27 @@
 package telegram
 
-import "testing"
+import (
+	"testing"
 
-// TestMenuCommands_Valid проверяет, что пункты меню удовлетворяют ограничениям
-// Telegram BotCommand и что алиасы (inMenu=false) в меню не попадают.
-// Handlers{} достаточно: menuCommands читает только имена/описания и method-values
-// (последние создаются на nil-указателях без паники — вызов тут не происходит).
-func TestMenuCommands_Valid(t *testing.T) {
-	menu := menuCommands(Handlers{})
+	"github.com/tumour/openwrt-bot/internal/app/access"
+	"github.com/tumour/openwrt-bot/internal/domain"
+)
+
+func grantWith(perms ...domain.Permission) access.Grant {
+	return access.Grant{
+		User: domain.NewActiveUser(1, "x", "r"),
+		Role: domain.Role{Name: "r", Permissions: perms},
+	}
+}
+
+func adminGrant() access.Grant { return grantWith(domain.AllPermissions()...) }
+
+// TestMenuCommandsFor_Valid проверяет, что пункты меню удовлетворяют
+// ограничениям Telegram BotCommand и что алиасы (inMenu=false) в меню
+// не попадают. Handlers{} достаточно: читаются только имена/описания и
+// method-values (создаются на nil-указателях без паники — вызова нет).
+func TestMenuCommandsFor_Valid(t *testing.T) {
+	menu := menuCommandsFor(Handlers{}, adminGrant())
 	if len(menu) == 0 {
 		t.Fatal("меню команд пустое")
 	}
@@ -29,6 +43,53 @@ func TestMenuCommands_Valid(t *testing.T) {
 		// Описание: 3-256 символов (считаем руны, не байты — описания кириллические).
 		if n := len([]rune(c.Description)); n < 3 || n > 256 {
 			t.Errorf("команда %q: описание %d символов, нужно 3-256", c.Text, n)
+		}
+	}
+}
+
+// «Нет пермишена = нет кнопки»: меню и клавиатура строятся по правам.
+func TestVisibility_FollowsPermissions(t *testing.T) {
+	userGrant := grantWith(domain.PermViewStatus, domain.PermListDevices, domain.PermRunSpeedtest)
+
+	for _, c := range menuCommandsFor(Handlers{}, userGrant) {
+		if c.Text == "users" {
+			t.Error("/users не должен быть в меню без manage_users")
+		}
+	}
+	found := false
+	for _, c := range menuCommandsFor(Handlers{}, adminGrant()) {
+		if c.Text == "users" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("/users должен быть в меню админа")
+	}
+
+	countButtons := func(g access.Grant) int {
+		n := 0
+		for _, row := range mainKeyboard(Handlers{}, g).ReplyKeyboard {
+			n += len(row)
+		}
+		return n
+	}
+	if got := countButtons(adminGrant()); got != 4 {
+		t.Errorf("кнопок у админа = %d, want 4 (устройства/статус/спидтест/доступ)", got)
+	}
+	if got := countButtons(userGrant); got != 3 {
+		t.Errorf("кнопок у юзера = %d, want 3 (без «Доступ»)", got)
+	}
+	if got := countButtons(grantWith()); got != 0 {
+		t.Errorf("кнопок без прав = %d, want 0", got)
+	}
+}
+
+// У каждой команды, кроме /start, объявлено право — забытая команда без
+// права стала бы дырой (guard пропускает perm == "").
+func TestCommands_AllHavePermissions(t *testing.T) {
+	for _, c := range commands(Handlers{}) {
+		if c.name != "start" && c.perm == "" {
+			t.Errorf("/%s без права: каждая команда должна быть закрыта пермишеном", c.name)
 		}
 	}
 }

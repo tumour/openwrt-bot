@@ -3,17 +3,21 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram"
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/handler"
+	"github.com/tumour/openwrt-bot/internal/adapter/secondary/accessjson"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/dhcp"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/librespeed"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/nftables"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/system"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/thermal"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/ubus"
+	"github.com/tumour/openwrt-bot/internal/app/access"
 	"github.com/tumour/openwrt-bot/internal/app/device"
 	"github.com/tumour/openwrt-bot/internal/app/network"
 	"github.com/tumour/openwrt-bot/internal/app/status"
@@ -50,6 +54,7 @@ func run() error {
 	// 4. Secondary adapters (вниз по графу).
 	runner := system.NewExecRunner()
 	fileReader := system.NewOSFileReader()
+	fileWriter := system.NewOSFileWriter()
 	ubusClient := ubus.NewClient(runner)
 	thermalClient := thermal.NewClient(fileReader, cfg.ThermalZonePath)
 	// Два nft-сета на одной таблице: бан-лист и vpn-обход. Правила, смотрящие
@@ -59,8 +64,11 @@ func run() error {
 	nftDirect := nftables.NewClient(runner, "inet fw4", "vpn_direct_macs")
 	dhcpClient := dhcp.NewClient(fileReader, cfg.DhcpLeasesPath)
 	speedClient := librespeed.NewClient(runner, cfg.SpeedTestServerID)
+	// Хранилище доступа: JSON-движок в <DatabaseDir>/json (см. accessjson).
+	accessStore := accessjson.New(fileReader, fileWriter, filepath.Join(cfg.DatabaseDir, "json"))
 
 	// 5. Use cases (выше). Каждый получает порты через конструктор.
+	users, roles := accessStore.Users(), accessStore.Roles()
 	getStatusUC := status.NewGetStatus(ubusClient, thermalClient)
 	banUC := device.NewBan(nftBanned)
 	unbanUC := device.NewUnban(nftBanned)
@@ -68,6 +76,16 @@ func run() error {
 	speedTestUC := network.NewRunSpeedTest(speedClient)
 	vpnOffUC := device.NewDisableVPN(nftDirect)
 	vpnOnUC := device.NewEnableVPN(nftDirect)
+	checkUC := access.NewCheck(users, roles)
+
+	// 5b. Bootstrap доступа: каталог стора, встроенные роли (admin с догоном
+	// каталога прав), env-админ. Без валидного ADMIN_USER_ID бот не стартует.
+	if err := accessStore.Init(ctx); err != nil {
+		return fmt.Errorf("access store: %w", err)
+	}
+	if err := access.NewSeed(users, roles).Execute(ctx, access.SeedInput{AdminID: cfg.AdminUserID}); err != nil {
+		return fmt.Errorf("access seed: %w", err)
+	}
 
 	// 6. Handlers (Primary). Принимают use cases.
 	handlers := telegram.Handlers{
@@ -78,18 +96,23 @@ func run() error {
 		SpeedTest: handler.NewSpeedTest(speedTestUC),
 		VPNOff:    handler.NewVPNOff(vpnOffUC),
 		VPNOn:     handler.NewVPNOn(vpnOnUC),
+		Access: handler.NewAccess(
+			access.NewRequestAccess(users, roles),
+			access.NewApprove(users, roles),
+			access.NewReject(users, roles),
+			access.NewListUsers(users, roles),
+			access.NewListRoles(users, roles),
+			access.NewSetRole(users, roles),
+			access.NewRemoveUser(users, roles),
+		),
 	}
 
-	// 7. Bot. Собирается из cfg, logger, handlers — больше ничего не нужно.
-	bot, err := telegram.NewBot(
-		telegram.Config{Token: cfg.BotToken, AllowedUserIDs: cfg.AllowedUserIDs},
-		log,
-		handlers,
-	)
+	// 7. Bot. Собирается из cfg, logger, чекера доступа и handlers.
+	bot, err := telegram.NewBot(telegram.Config{Token: cfg.BotToken}, log, checkUC, handlers)
 	if err != nil {
 		return err
 	}
 
-	log.Info("openwrt-bot started", "allowed_users", len(cfg.AllowedUserIDs))
+	log.Info("openwrt-bot started", "admin_user_id", cfg.AdminUserID)
 	return bot.Run(ctx)
 }

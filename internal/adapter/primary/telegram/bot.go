@@ -14,9 +14,10 @@ import (
 )
 
 // Config — настройки бота. Tokенов мы тут не валидируем (это работа config layer).
+// Доступом управляет access-фича (whitelist из env ушёл в хранилище) —
+// боту нужен только чекер (middleware.AccessChecker) в NewBot.
 type Config struct {
-	Token          string
-	AllowedUserIDs []int64 // whitelist Telegram user ID (отправители, не чаты)
+	Token string
 }
 
 // Bot — обёртка над telebot.Bot с lifecycle-методом Run, удобным для main.
@@ -34,9 +35,9 @@ type Bot struct {
 }
 
 // NewBot собирает telebot, навешивает middleware в правильном порядке,
-// регистрирует команды. Handlers инжектируются снаружи — это позволяет тестировать
-// бота с фейк-handler'ами и переиспользовать handler'ы (например в CLI-режиме).
-func NewBot(cfg Config, logger *slog.Logger, h Handlers) (*Bot, error) {
+// регистрирует команды. Handlers и чекер доступа инжектируются снаружи — это
+// позволяет тестировать бота с фейками и переиспользовать handler'ы.
+func NewBot(cfg Config, logger *slog.Logger, check middleware.AccessChecker, h Handlers) (*Bot, error) {
 	tb, err := tele.NewBot(tele.Settings{
 		Token:  cfg.Token,
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
@@ -47,18 +48,20 @@ func NewBot(cfg Config, logger *slog.Logger, h Handlers) (*Bot, error) {
 
 	b := &Bot{bot: tb, logger: logger}
 
-	// Порядок middleware важен: сначала Auth (чтобы не логировать спам от чужих
-	// и не считать его in-flight), затем track (учёт + базовый ctx), потом Log.
-	tb.Use(middleware.Auth(cfg.AllowedUserIDs, logger))
+	// Порядок middleware важен: сначала track (базовый ctx нужен уже Auth'у —
+	// он ходит в хранилище доступа; заодно shutdown дожидается и проверки),
+	// затем Auth (кладёт Grant или уводит незнакомца в approve-flow),
+	// потом Log (после Auth — спам от чужих не логируем как команды).
 	tb.Use(b.track)
+	tb.Use(middleware.Auth(check, h.Access.HandleRequest, logger))
 	tb.Use(middleware.Log(logger))
 
 	registerRoutes(tb, h)
 
-	// Нативное меню команд Telegram (кнопка ≡ у поля ввода + автодополнение по «/»).
-	// Некритично: если API недоступен в момент старта — бот работает и без меню,
-	// поэтому ошибку логируем, но не валим запуск.
-	if err := tb.SetCommands(menuCommands(h)); err != nil {
+	// Глобальное меню — только /start: незнакомцу нечего подсказывать, а
+	// допущенный получит личное меню по правам первым же /start. Некритично:
+	// если API недоступен в момент старта — бот работает и без меню.
+	if err := tb.SetCommands(defaultMenuCommands()); err != nil {
 		logger.Warn("не удалось установить меню команд Telegram", "err", err)
 	}
 

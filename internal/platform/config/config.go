@@ -11,12 +11,18 @@ import (
 // или required=true проваливается — вернёт ошибку. Это даёт "fail fast" на старте.
 type Config struct {
 	BotToken string `env:"BOT_TOKEN,required"`
-	// AllowedUserIDs — whitelist Telegram user ID (не chat ID!): Auth-middleware
-	// проверяет отправителя сообщения. В личке user ID и chat ID совпадают,
-	// в группах — нет, поэтому имя переменной говорит то, что проверяется.
-	AllowedUserIDs []int64 `env:"ALLOWED_USER_IDS,required" envSeparator:","`
-	LogLevel       string  `env:"LOG_LEVEL" envDefault:"info"`
-	DhcpLeasesPath string  `env:"DHCP_LEASES_PATH" envDefault:"/tmp/dhcp.leases"`
+	// AdminUserID — Telegram user ID первого админа (ровно один). Без него бот
+	// не стартует: списком пользователей управляют только носители manage_users,
+	// и хотя бы один обязан существовать. Используется ТОЛЬКО как сид при
+	// старте (access.Seed): дальше пользователи живут в хранилище, env не
+	// источник правды. Остальные получают доступ через approve-flow (/start).
+	AdminUserID int64 `env:"ADMIN_USER_ID,required"`
+	// DatabaseDir — каталог runtime-данных бота. Внутри по подкаталогу на
+	// движок: database/json (текущий), завтра database/sqlite и т.д.
+	// На роутере живёт в /etc/openwrt-bot/ — переживает sysupgrade.
+	DatabaseDir    string `env:"DATABASE_DIR" envDefault:"/etc/openwrt-bot/database"`
+	LogLevel       string `env:"LOG_LEVEL" envDefault:"info"`
+	DhcpLeasesPath string `env:"DHCP_LEASES_PATH" envDefault:"/tmp/dhcp.leases"`
 	// ThermalZonePath — sysfs-файл с температурой CPU для /status. На разных
 	// платформах датчик CPU лежит в разных зонах (thermal_zone0/1/...); если на
 	// железе зоны нет вовсе — /status просто не покажет строку Temp (см. GetStatus).
@@ -32,6 +38,9 @@ func Load() (Config, error) {
 	var cfg Config
 	if err := env.Parse(&cfg); err != nil {
 		return Config{}, fmt.Errorf("parse env: %w", err)
+	}
+	if cfg.AdminUserID <= 0 {
+		return Config{}, fmt.Errorf("ADMIN_USER_ID=%d: нужен Telegram user ID админа — без него ботом никто не сможет управлять", cfg.AdminUserID)
 	}
 	return cfg, nil
 }

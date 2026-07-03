@@ -8,6 +8,7 @@ import (
 
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/middleware"
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/presenter"
+	"github.com/tumour/openwrt-bot/internal/app/access"
 	"github.com/tumour/openwrt-bot/internal/app/device"
 	"github.com/tumour/openwrt-bot/internal/domain"
 	tele "gopkg.in/telebot.v3"
@@ -41,27 +42,28 @@ const (
 	cbVPNOn  = "vpnon"
 )
 
-// RegisterCallbacks вешает обработчики inline-кнопок. Вызывается из router'а
-// рядом с регистрацией команд; middleware (Auth/Log) применяются и к callback'ам.
-func (h *Devices) RegisterCallbacks(bot *tele.Bot) {
-	bot.Handle(&tele.Btn{Unique: cbCard}, h.handleCard)
-	bot.Handle(&tele.Btn{Unique: cbBack}, h.handleBack)
-	bot.Handle(&tele.Btn{Unique: cbBan}, h.action(func(ctx context.Context, mac domain.MAC) error {
+// RegisterCallbacks вешает обработчики inline-кнопок. guard — проверка права
+// из роутера: карточки хватает list_devices, действия — под правами бана/VPN
+// (кнопок без права юзер не видит, guard — защита от «слепого» callback'а).
+func (h *Devices) RegisterCallbacks(bot *tele.Bot, guard func(domain.Permission, tele.HandlerFunc) tele.HandlerFunc) {
+	bot.Handle(&tele.Btn{Unique: cbCard}, guard(domain.PermListDevices, h.handleCard))
+	bot.Handle(&tele.Btn{Unique: cbBack}, guard(domain.PermListDevices, h.handleBack))
+	bot.Handle(&tele.Btn{Unique: cbBan}, guard(domain.PermBanDevices, h.action(func(ctx context.Context, mac domain.MAC) error {
 		_, err := h.ban.Execute(ctx, device.BanInput{MAC: mac})
 		return err
-	}, "🚫 забанено"))
-	bot.Handle(&tele.Btn{Unique: cbUnban}, h.action(func(ctx context.Context, mac domain.MAC) error {
+	}, "🚫 забанено")))
+	bot.Handle(&tele.Btn{Unique: cbUnban}, guard(domain.PermBanDevices, h.action(func(ctx context.Context, mac domain.MAC) error {
 		_, err := h.unban.Execute(ctx, device.UnbanInput{MAC: mac})
 		return err
-	}, "🟢 разбанено"))
-	bot.Handle(&tele.Btn{Unique: cbVPNOff}, h.action(func(ctx context.Context, mac domain.MAC) error {
+	}, "🟢 разбанено")))
+	bot.Handle(&tele.Btn{Unique: cbVPNOff}, guard(domain.PermManageVPN, h.action(func(ctx context.Context, mac domain.MAC) error {
 		_, err := h.vpnOff.Execute(ctx, device.DisableVPNInput{MAC: mac})
 		return err
-	}, "🌐 ходит напрямую"))
-	bot.Handle(&tele.Btn{Unique: cbVPNOn}, h.action(func(ctx context.Context, mac domain.MAC) error {
+	}, "🌐 ходит напрямую")))
+	bot.Handle(&tele.Btn{Unique: cbVPNOn}, guard(domain.PermManageVPN, h.action(func(ctx context.Context, mac domain.MAC) error {
 		_, err := h.vpnOn.Execute(ctx, device.EnableVPNInput{MAC: mac})
 		return err
-	}, "🔒 снова через VPN"))
+	}, "🔒 снова через VPN")))
 }
 
 // HandleList — команда /list: заголовок + кнопка на каждое устройство.
@@ -130,6 +132,7 @@ func (h *Devices) action(do func(context.Context, domain.MAC) error, toast strin
 }
 
 // renderCard рисует карточку устройства по свежему состоянию (Edit сообщения).
+// Набор кнопок действий — по правам смотрящего (нет права = нет кнопки).
 func (h *Devices) renderCard(c tele.Context, mac domain.MAC) error {
 	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
 	defer cancel()
@@ -138,9 +141,10 @@ func (h *Devices) renderCard(c tele.Context, mac domain.MAC) error {
 	if err != nil {
 		return err
 	}
+	g, _ := middleware.GrantFrom(c)
 	for _, v := range out.Devices {
 		if v.Device.MAC == mac {
-			return editKeepalive(c, presenter.DeviceCard(v), cardMarkup(v))
+			return editKeepalive(c, presenter.DeviceCard(v), cardMarkup(v, g))
 		}
 	}
 	// Устройство ушло из DHCP-лиз между /list и тапом.
@@ -173,25 +177,35 @@ func listMarkup(views []device.View) *tele.ReplyMarkup {
 	return m
 }
 
-// cardMarkup — действия по текущему состоянию: показываем только осмысленный
-// тумблер (забаненному — «Разбанить», не забаненному — «Забанить»).
-func cardMarkup(v device.View) *tele.ReplyMarkup {
+// cardMarkup — действия по текущему состоянию И правам смотрящего: показываем
+// только осмысленный тумблер (забаненному — «Разбанить»), и только тот, на
+// который есть право («нет пермишена = нет кнопки»).
+func cardMarkup(v device.View, g access.Grant) *tele.ReplyMarkup {
 	m := &tele.ReplyMarkup{}
 	mac := v.Device.MAC.String()
 
-	banBtn := m.Data("🚫 Забанить", cbBan, mac)
-	if v.Banned {
-		banBtn = m.Data("🟢 Разбанить", cbUnban, mac)
+	var actions []tele.Btn
+	if g.Has(domain.PermBanDevices) {
+		banBtn := m.Data("🚫 Забанить", cbBan, mac)
+		if v.Banned {
+			banBtn = m.Data("🟢 Разбанить", cbUnban, mac)
+		}
+		actions = append(actions, banBtn)
 	}
-	vpnBtn := m.Data("🌐 Выключить VPN", cbVPNOff, mac)
-	if v.Direct {
-		vpnBtn = m.Data("🔒 Включить VPN", cbVPNOn, mac)
+	if g.Has(domain.PermManageVPN) {
+		vpnBtn := m.Data("🌐 Выключить VPN", cbVPNOff, mac)
+		if v.Direct {
+			vpnBtn = m.Data("🔒 Включить VPN", cbVPNOn, mac)
+		}
+		actions = append(actions, vpnBtn)
 	}
 
-	m.Inline(
-		m.Row(banBtn, vpnBtn),
-		m.Row(m.Data("⬅ К списку", cbBack), m.Data("🔄 Обновить", cbCard, mac)),
-	)
+	var rows []tele.Row
+	if len(actions) > 0 {
+		rows = append(rows, m.Row(actions...))
+	}
+	rows = append(rows, m.Row(m.Data("⬅ К списку", cbBack), m.Data("🔄 Обновить", cbCard, mac)))
+	m.Inline(rows...)
 	return m
 }
 
