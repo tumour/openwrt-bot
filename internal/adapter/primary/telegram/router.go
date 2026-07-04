@@ -16,6 +16,8 @@ type Handlers struct {
 	SpeedTest *handler.SpeedTest
 	VPNOff    *handler.VPNOff
 	VPNOn     *handler.VPNOn
+	Limit     *handler.Limit
+	Unlimit   *handler.Unlimit
 }
 
 // command — описание одной команды в ОДНОМ месте: и маршрут (handler), и пункт
@@ -44,6 +46,8 @@ func commands(h Handlers) []command {
 		{"unban", "Разбанить устройство: /unban AA:BB:CC:DD:EE:FF", h.Unban.Handle, false},
 		{"vpnoff", "Пустить устройство мимо VPN: /vpnoff AA:BB:CC:DD:EE:FF", h.VPNOff.Handle, false},
 		{"vpnon", "Вернуть устройство в VPN: /vpnon AA:BB:CC:DD:EE:FF", h.VPNOn.Handle, false},
+		{"limit", "Ограничить скорость: /limit AA:BB:CC:DD:EE:FF 512 (КБ/с)", h.Limit.Handle, false},
+		{"unlimit", "Снять лимит скорости: /unlimit AA:BB:CC:DD:EE:FF", h.Unlimit.Handle, false},
 		{"start", "Привет + клавиатура управления", startHandler(h), false},
 	}
 }

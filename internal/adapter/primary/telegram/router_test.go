@@ -12,7 +12,7 @@ func TestMenuCommands_Valid(t *testing.T) {
 		t.Fatal("меню команд пустое")
 	}
 	// MAC-команды спрятаны из меню (функционал — в карточках /list).
-	hidden := map[string]bool{"start": true, "ban": true, "unban": true, "vpnoff": true, "vpnon": true}
+	hidden := map[string]bool{"start": true, "ban": true, "unban": true, "vpnoff": true, "vpnon": true, "limit": true, "unlimit": true}
 	for _, c := range menu {
 		if hidden[c.Text] {
 			t.Errorf("/%s не должен попадать в меню", c.Text)

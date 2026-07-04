@@ -29,3 +29,13 @@ func VPNOff(mac domain.MAC) string {
 func VPNOn(mac domain.MAC) string {
 	return fmt.Sprintf("🔒 устройство <code>%s</code> снова через VPN", mac)
 }
+
+// Limited/Unlimited — подтверждения лимита скорости. Rate — value object
+// (только цифры), экранировать нечего, как и MAC.
+func Limited(mac domain.MAC, rate domain.Rate) string {
+	return fmt.Sprintf("⏱ устройство <code>%s</code>: лимит %s КБ/с на каждое направление", mac, rate)
+}
+
+func Unlimited(mac domain.MAC) string {
+	return fmt.Sprintf("♾ устройство <code>%s</code>: лимит скорости снят", mac)
+}

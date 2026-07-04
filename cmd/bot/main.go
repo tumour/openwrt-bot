@@ -71,6 +71,8 @@ func run() error {
 	speedTestUC := network.NewRunSpeedTest(speedClient)
 	vpnOffUC := device.NewDisableVPN(nftDirect)
 	vpnOnUC := device.NewEnableVPN(nftDirect)
+	setLimitUC := device.NewSetLimit(nftLimits)
+	removeLimitUC := device.NewRemoveLimit(nftLimits)
 
 	// 6. Handlers (Primary). Принимают use cases.
 	handlers := telegram.Handlers{
@@ -81,6 +83,8 @@ func run() error {
 		SpeedTest: handler.NewSpeedTest(speedTestUC),
 		VPNOff:    handler.NewVPNOff(vpnOffUC),
 		VPNOn:     handler.NewVPNOn(vpnOnUC),
+		Limit:     handler.NewLimit(setLimitUC),
+		Unlimit:   handler.NewUnlimit(removeLimitUC),
 	}
 
 	// 7. Bot. Собирается из cfg, logger, handlers — больше ничего не нужно.
