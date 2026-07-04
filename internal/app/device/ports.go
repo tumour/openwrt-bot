@@ -24,3 +24,15 @@ type MACSetPort interface {
 type DhcpPort interface {
 	ListLeases(ctx context.Context) ([]domain.Device, error)
 }
+
+// RateLimitPort управляет per-device лимитами скорости (nft limit-объекты +
+// map'ы в netdev-таблице). Контракт СОЗНАТЕЛЬНО идемпотентный — контраст с
+// типизированным MACSetPort: Set = создать-или-обновить, Remove отсутствующего
+// лимита = no-op уже в адаптере. Идемпотентность здесь даёт сам механизм
+// (nft destroy = delete-if-exists), а типизированная ошибка только у Remove
+// при create-or-update Set была бы асимметрией внутри одного порта.
+type RateLimitPort interface {
+	Set(ctx context.Context, mac domain.MAC, rate domain.Rate) error
+	Remove(ctx context.Context, mac domain.MAC) error
+	List(ctx context.Context) (map[domain.MAC]domain.Rate, error)
+}
