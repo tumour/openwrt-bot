@@ -57,6 +57,9 @@ func run() error {
 	// только элементами.
 	nftBanned := nftables.NewClient(runner, "inet fw4", "banned_macs")
 	nftDirect := nftables.NewClient(runner, "inet fw4", "vpn_direct_macs")
+	// Лимиты скорости живут в отдельной netdev-таблице (policing на ingress/egress
+	// br-lan); скелет так же создаёт init.d, бот — только limit-объекты и элементы map.
+	nftLimits := nftables.NewRateLimiter(runner, "netdev openwrt_bot")
 	dhcpClient := dhcp.NewClient(fileReader, cfg.DhcpLeasesPath)
 	speedClient := librespeed.NewClient(runner, cfg.SpeedTestServerID)
 
@@ -64,7 +67,7 @@ func run() error {
 	getStatusUC := status.NewGetStatus(ubusClient, thermalClient)
 	banUC := device.NewBan(nftBanned)
 	unbanUC := device.NewUnban(nftBanned)
-	listUC := device.NewList(dhcpClient, nftBanned, nftDirect)
+	listUC := device.NewList(dhcpClient, nftBanned, nftDirect, nftLimits)
 	speedTestUC := network.NewRunSpeedTest(speedClient)
 	vpnOffUC := device.NewDisableVPN(nftDirect)
 	vpnOnUC := device.NewEnableVPN(nftDirect)
