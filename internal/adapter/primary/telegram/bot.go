@@ -39,7 +39,7 @@ type Bot struct {
 func NewBot(cfg Config, logger *slog.Logger, h Handlers) (*Bot, error) {
 	tb, err := tele.NewBot(tele.Settings{
 		Token:  cfg.Token,
-		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
+		Poller: newResilientPoller(logger),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("init telebot: %w", err)
