@@ -79,7 +79,7 @@ func run() error {
 		Status:    handler.NewStatus(getStatusUC),
 		Ban:       handler.NewBan(banUC),
 		Unban:     handler.NewUnban(unbanUC),
-		Devices:   handler.NewDevices(listUC, banUC, unbanUC, vpnOffUC, vpnOnUC),
+		Devices:   handler.NewDevices(listUC, banUC, unbanUC, vpnOffUC, vpnOnUC, setLimitUC, removeLimitUC),
 		SpeedTest: handler.NewSpeedTest(speedTestUC),
 		VPNOff:    handler.NewVPNOff(vpnOffUC),
 		VPNOn:     handler.NewVPNOn(vpnOnUC),

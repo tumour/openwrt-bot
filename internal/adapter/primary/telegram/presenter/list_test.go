@@ -27,6 +27,16 @@ func view(t *testing.T, host, ip string, banned, direct bool) device.View {
 	}
 }
 
+func limited(t *testing.T, v device.View, kbps int) device.View {
+	t.Helper()
+	rate, err := domain.NewRate(kbps)
+	if err != nil {
+		t.Fatalf("NewRate(%d): %v", kbps, err)
+	}
+	v.Limit = rate
+	return v
+}
+
 func TestListHeader(t *testing.T) {
 	if got := ListHeader(0); got != "<i>LAN пуст</i>" {
 		t.Errorf("пустой список = %q", got)
@@ -52,6 +62,13 @@ func TestDeviceLabel(t *testing.T) {
 	if got := DeviceLabel(view(t, "pc", "192.168.1.12", true, true)); !strings.HasPrefix(got, "🚫") {
 		t.Errorf("бан должен перекрывать обход: %q", got)
 	}
+	// Лимит: показывается прежде обхода, но бан сильнее.
+	if got := DeviceLabel(limited(t, view(t, "pc", "192.168.1.12", false, true), 512)); !strings.HasPrefix(got, "⏱") {
+		t.Errorf("лимит должен показываться прежде обхода: %q", got)
+	}
+	if got := DeviceLabel(limited(t, view(t, "pc", "192.168.1.12", true, false), 512)); !strings.HasPrefix(got, "🚫") {
+		t.Errorf("бан должен перекрывать лимит: %q", got)
+	}
 }
 
 func TestDeviceCard(t *testing.T) {
@@ -74,6 +91,18 @@ func TestDeviceCard_Banned(t *testing.T) {
 	got := DeviceCard(view(t, "tv", "192.168.1.20", true, false))
 	if !strings.Contains(got, "🚫 забанен") || !strings.Contains(got, "через VPN") {
 		t.Errorf("статусы карточки: %q", got)
+	}
+}
+
+func TestDeviceCard_Limit(t *testing.T) {
+	// Без лимита — «Лимит: нет».
+	if got := DeviceCard(view(t, "tv", "192.168.1.20", false, false)); !strings.Contains(got, "Лимит: нет") {
+		t.Errorf("нет строки про отсутствие лимита: %q", got)
+	}
+	// С лимитом — значение в КБ/с.
+	got := DeviceCard(limited(t, view(t, "tv", "192.168.1.20", false, false), 512))
+	if !strings.Contains(got, "Лимит: ⏱ 512 КБ/с") {
+		t.Errorf("нет строки лимита: %q", got)
 	}
 }
 

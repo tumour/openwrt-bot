@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/middleware"
@@ -14,32 +15,42 @@ import (
 )
 
 // Devices — интерактивный /list: устройства inline-кнопками, тап открывает
-// карточку с действиями (бан/разбан, vpn вкл/выкл) по текущему состоянию.
-// Команды /ban, /vpnoff и т.д. остаются как быстрый ручной путь — здесь
-// используются те же use cases.
+// карточку с действиями (бан/разбан, vpn вкл/выкл, лимит скорости) по текущему
+// состоянию. Команды /ban, /vpnoff, /limit и т.д. остаются как быстрый ручной
+// путь — здесь используются те же use cases.
 type Devices struct {
-	list   *device.List
-	ban    *device.Ban
-	unban  *device.Unban
-	vpnOff *device.DisableVPN
-	vpnOn  *device.EnableVPN
+	list        *device.List
+	ban         *device.Ban
+	unban       *device.Unban
+	vpnOff      *device.DisableVPN
+	vpnOn       *device.EnableVPN
+	setLimit    *device.SetLimit
+	removeLimit *device.RemoveLimit
 }
 
 func NewDevices(list *device.List, ban *device.Ban, unban *device.Unban,
-	vpnOff *device.DisableVPN, vpnOn *device.EnableVPN) *Devices {
-	return &Devices{list: list, ban: ban, unban: unban, vpnOff: vpnOff, vpnOn: vpnOn}
+	vpnOff *device.DisableVPN, vpnOn *device.EnableVPN,
+	setLimit *device.SetLimit, removeLimit *device.RemoveLimit) *Devices {
+	return &Devices{list: list, ban: ban, unban: unban, vpnOff: vpnOff, vpnOn: vpnOn,
+		setLimit: setLimit, removeLimit: removeLimit}
 }
 
 // Уникальные id callback-кнопок (telebot матчит обработчик по unique,
-// payload — MAC устройства).
+// payload — MAC устройства; у пресетов лимита — "mac|rate").
 const (
-	cbCard   = "card" // открыть/обновить карточку
-	cbBack   = "back" // вернуться к списку
-	cbBan    = "ban"  // действия из карточки ↓
-	cbUnban  = "unban"
-	cbVPNOff = "vpnoff"
-	cbVPNOn  = "vpnon"
+	cbCard    = "card" // открыть/обновить карточку
+	cbBack    = "back" // вернуться к списку
+	cbBan     = "ban"  // действия из карточки ↓
+	cbUnban   = "unban"
+	cbVPNOff  = "vpnoff"
+	cbVPNOn   = "vpnon"
+	cbLimit   = "limit"
+	cbUnlimit = "unlimit"
 )
+
+// limitPresets — кнопки-пресеты лимита в карточке, КБ/с на каждое направление.
+// Произвольные значения — текстом: /limit <MAC> <КБ/с>.
+var limitPresets = []int{256, 512, 1024, 2048}
 
 // RegisterCallbacks вешает обработчики inline-кнопок. Вызывается из router'а
 // рядом с регистрацией команд; middleware (Auth/Log) применяются и к callback'ам.
@@ -62,6 +73,11 @@ func (h *Devices) RegisterCallbacks(bot *tele.Bot) {
 		_, err := h.vpnOn.Execute(ctx, device.EnableVPNInput{MAC: mac})
 		return err
 	}, "🔒 снова через VPN"))
+	bot.Handle(&tele.Btn{Unique: cbUnlimit}, h.action(func(ctx context.Context, mac domain.MAC) error {
+		_, err := h.removeLimit.Execute(ctx, device.RemoveLimitInput{MAC: mac})
+		return err
+	}, "♾ лимит снят"))
+	bot.Handle(&tele.Btn{Unique: cbLimit}, h.handleLimit)
 }
 
 // HandleList — команда /list: заголовок + кнопка на каждое устройство.
@@ -129,6 +145,50 @@ func (h *Devices) action(do func(context.Context, domain.MAC) error, toast strin
 	}
 }
 
+// handleLimit — тап по кнопке-пресету: как action(), но payload двойной
+// ("mac|rate"), поэтому парсинг свой.
+func (h *Devices) handleLimit(c tele.Context) error {
+	mac, rate, err := parseLimitPayload(c.Data())
+	if err != nil {
+		return c.Respond(&tele.CallbackResponse{Text: "⚠ битая кнопка лимита"})
+	}
+
+	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
+	defer cancel()
+
+	if _, err := h.setLimit.Execute(ctx, device.SetLimitInput{MAC: mac, Rate: rate}); err != nil {
+		_ = c.Respond(&tele.CallbackResponse{Text: "⚠ не получилось"})
+		return fmt.Errorf("card limit %s: %w", mac, err)
+	}
+	if err := h.renderCard(c, mac); err != nil {
+		return fmt.Errorf("refresh card %s: %w", mac, err)
+	}
+	return c.Respond(&tele.CallbackResponse{Text: "⏱ лимит " + rate.String() + " КБ/с"})
+}
+
+// parseLimitPayload разбирает payload кнопки-пресета "mac|rate" (так telebot
+// склеивает варargs в m.Data). Всё через value objects: битая кнопка должна
+// давать toast, а не панику.
+func parseLimitPayload(data string) (domain.MAC, domain.Rate, error) {
+	macStr, rateStr, ok := strings.Cut(data, "|")
+	if !ok {
+		return "", 0, fmt.Errorf("limit payload без разделителя: %q", data)
+	}
+	mac, err := domain.NewMAC(macStr)
+	if err != nil {
+		return "", 0, err
+	}
+	n, err := strconv.Atoi(rateStr)
+	if err != nil {
+		return "", 0, fmt.Errorf("limit payload: rate не число: %q", rateStr)
+	}
+	rate, err := domain.NewRate(n)
+	if err != nil {
+		return "", 0, err
+	}
+	return mac, rate, nil
+}
+
 // renderCard рисует карточку устройства по свежему состоянию (Edit сообщения).
 func (h *Devices) renderCard(c tele.Context, mac domain.MAC) error {
 	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
@@ -174,7 +234,9 @@ func listMarkup(views []device.View) *tele.ReplyMarkup {
 }
 
 // cardMarkup — действия по текущему состоянию: показываем только осмысленный
-// тумблер (забаненному — «Разбанить», не забаненному — «Забанить»).
+// тумблер (забаненному — «Разбанить», не забаненному — «Забанить»). Ряд
+// пресетов лимита (КБ/с — единицы объясняет строка «Лимит» в тексте карточки)
+// виден всегда, активный пресет помечен ✓; «Снять лимит» — только когда есть что снимать.
 func cardMarkup(v device.View) *tele.ReplyMarkup {
 	m := &tele.ReplyMarkup{}
 	mac := v.Device.MAC.String()
@@ -187,11 +249,24 @@ func cardMarkup(v device.View) *tele.ReplyMarkup {
 	if v.Direct {
 		vpnBtn = m.Data("🔒 Включить VPN", cbVPNOn, mac)
 	}
+	presets := make([]tele.Btn, 0, len(limitPresets))
+	for _, p := range limitPresets {
+		label := strconv.Itoa(p)
+		if v.Limit.KBps() == p {
+			label = "✓ " + label
+		}
+		presets = append(presets, m.Data(label, cbLimit, mac, strconv.Itoa(p)))
+	}
 
-	m.Inline(
+	rows := []tele.Row{
 		m.Row(banBtn, vpnBtn),
-		m.Row(m.Data("⬅ К списку", cbBack), m.Data("🔄 Обновить", cbCard, mac)),
-	)
+		m.Row(presets...),
+	}
+	if !v.Limit.IsZero() {
+		rows = append(rows, m.Row(m.Data("♾ Снять лимит", cbUnlimit, mac)))
+	}
+	rows = append(rows, m.Row(m.Data("⬅ К списку", cbBack), m.Data("🔄 Обновить", cbCard, mac)))
+	m.Inline(rows...)
 	return m
 }
 

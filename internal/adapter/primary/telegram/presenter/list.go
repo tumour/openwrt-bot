@@ -26,7 +26,8 @@ func DeviceLabel(v device.View) string {
 }
 
 // DeviceCard — карточка устройства (HTML): полные данные + статусы.
-// MAC — <code>-спан, тап по нему копирует.
+// MAC — <code>-спан, тап по нему копирует. Rate — value object (только цифры),
+// не экранируем, как и MAC.
 func DeviceCard(v device.View) string {
 	ban := "нет"
 	if v.Banned {
@@ -36,10 +37,14 @@ func DeviceCard(v device.View) string {
 	if v.Direct {
 		vpn = "🌐 напрямую, мимо VPN"
 	}
+	limit := "нет"
+	if !v.Limit.IsZero() {
+		limit = fmt.Sprintf("⏱ %s КБ/с", v.Limit)
+	}
 	return fmt.Sprintf(
-		"<b>%s %s</b>\nIP: %s\nMAC: <code>%s</code>\n\nБан: %s\nVPN: %s",
+		"<b>%s %s</b>\nIP: %s\nMAC: <code>%s</code>\n\nБан: %s\nVPN: %s\nЛимит: %s",
 		deviceIcon(v), html.EscapeString(hostOrDefault(v)), html.EscapeString(ipOrDash(v)),
-		html.EscapeString(v.Device.MAC.String()), ban, vpn)
+		html.EscapeString(v.Device.MAC.String()), ban, vpn, limit)
 }
 
 // CardGone — карточка устройства, пропавшего из DHCP-лиз между /list и тапом.
@@ -47,12 +52,15 @@ func CardGone(mac string) string {
 	return fmt.Sprintf("устройство <code>%s</code> пропало из DHCP-лиз — обнови список", html.EscapeString(mac))
 }
 
-// deviceIcon: бан перекрывает vpn-обход (забаненный дропается в prerouting
-// раньше, чем сработает метка обхода).
+// deviceIcon: бан перекрывает всё (забаненный дропается в prerouting раньше
+// остальных правил); лимит показываем прежде vpn-обхода — это более
+// «жалобогенное» состояние («почему тормозит?» задают чаще, чем «как я хожу»).
 func deviceIcon(v device.View) string {
 	switch {
 	case v.Banned:
 		return "🚫"
+	case !v.Limit.IsZero():
+		return "⏱"
 	case v.Direct:
 		return "🌐"
 	default:
