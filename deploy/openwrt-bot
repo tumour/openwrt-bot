@@ -16,6 +16,8 @@ ENV_FILE=/etc/openwrt-bot/env
 NFT_TABLE="inet fw4"
 NFT_SET="banned_macs"
 NFT_DIRECT_SET="vpn_direct_macs"
+NFT_RATE_TABLE="netdev openwrt_bot"
+LAN_DEV="br-lan"
 
 # Idempotent bootstrap nftables. Без fw4 reload — `nft add` вставляет в
 # существующую таблицу, не пересобирает firewall. Всё runtime: reboot чистит,
@@ -46,10 +48,38 @@ ensure_nft() {
         nft add rule $NFT_TABLE ban_prerouting ether saddr @$NFT_DIRECT_SET meta mark set 0xff
 }
 
+# Лимиты скорости per-device (/limit в боте). Family netdev обязателен: download
+# по MAC ловится только на egress br-lan (там доступен ether daddr), upload — на
+# ingress (ether saddr). Bridged LAN<->LAN трафик через эти хуки не проходит —
+# не страдает; tproxy-нутый xray-трафик хукам виден. Отдельная таблица (не fw4):
+# egress-чейны в inet не живут, зато netdev-таблицу не трогает fw4 reload.
+# Скелет создаёт init.d, бот управляет только limit-объектами lim_{ul,dl}_<mac>
+# и элементами map'ов. Runtime: reboot чистит, следующий `bot on` пересоздаёт
+# пустым (лимиты слетают, как баны). Чейны требуют существующего $LAN_DEV:
+# при START=95 мост давно поднят, но ручной `bot on` до сети создаст таблицу
+# без чейнов — долечится следующим рестартом.
+ensure_nft_rate() {
+    nft list table $NFT_RATE_TABLE >/dev/null 2>&1 || \
+        nft add table $NFT_RATE_TABLE
+    nft list map $NFT_RATE_TABLE rate_ul >/dev/null 2>&1 || \
+        nft add map $NFT_RATE_TABLE rate_ul '{ type ether_addr : limit ; }'
+    nft list map $NFT_RATE_TABLE rate_dl >/dev/null 2>&1 || \
+        nft add map $NFT_RATE_TABLE rate_dl '{ type ether_addr : limit ; }'
+    nft list chain $NFT_RATE_TABLE lan_ingress >/dev/null 2>&1 || \
+        nft add chain $NFT_RATE_TABLE lan_ingress "{ type filter hook ingress device $LAN_DEV priority filter ; policy accept ; }"
+    nft list chain $NFT_RATE_TABLE lan_ingress 2>/dev/null | grep -q "@rate_ul" || \
+        nft add rule $NFT_RATE_TABLE lan_ingress limit name ether saddr map @rate_ul counter drop
+    nft list chain $NFT_RATE_TABLE lan_egress >/dev/null 2>&1 || \
+        nft add chain $NFT_RATE_TABLE lan_egress "{ type filter hook egress device $LAN_DEV priority filter ; policy accept ; }"
+    nft list chain $NFT_RATE_TABLE lan_egress 2>/dev/null | grep -q "@rate_dl" || \
+        nft add rule $NFT_RATE_TABLE lan_egress limit name ether daddr map @rate_dl counter drop
+}
+
 start_service() {
     [ -f "$ENV_FILE" ] || { echo "openwrt-bot: нет $ENV_FILE — создай из openwrt-bot.env.example"; return 1; }
     [ -x "$PROG" ]     || { echo "openwrt-bot: нет $PROG"; return 1; }
     ensure_nft
+    ensure_nft_rate
 
     procd_open_instance
     procd_set_param command "$PROG"
