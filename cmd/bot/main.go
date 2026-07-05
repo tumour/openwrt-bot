@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/tumour/openwrt-bot/internal/adapter/primary/httpapi"
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram"
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/handler"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/dhcp"
@@ -19,6 +20,7 @@ import (
 	"github.com/tumour/openwrt-bot/internal/app/status"
 	"github.com/tumour/openwrt-bot/internal/platform/config"
 	"github.com/tumour/openwrt-bot/internal/platform/logger"
+	"github.com/tumour/openwrt-bot/internal/platform/rungroup"
 	"github.com/tumour/openwrt-bot/internal/platform/shutdown"
 )
 
@@ -97,6 +99,30 @@ func run() error {
 		return err
 	}
 
-	log.Info("openwrt-bot started", "allowed_users", len(cfg.AllowedUserIDs))
-	return bot.Run(ctx)
+	log.Info("openwrt-bot started", "allowed_users", len(cfg.AllowedUserIDs), "http_api", cfg.HTTPAddr != "")
+
+	// HTTP API выключен — ровно прежнее поведение: один блокирующий Run.
+	if cfg.HTTPAddr == "" {
+		return bot.Run(ctx)
+	}
+
+	// 8. HTTP API — второй primary adapter поверх ТЕХ ЖЕ экземпляров use cases.
+	// TelegramUp — единственная связь primary↔primary, и живёт она только здесь.
+	api := httpapi.NewServer(cfg.HTTPAddr, httpapi.Deps{
+		List:        listUC,
+		Ban:         banUC,
+		Unban:       unbanUC,
+		VPNOff:      vpnOffUC,
+		VPNOn:       vpnOnUC,
+		SetLimit:    setLimitUC,
+		RemoveLimit: removeLimitUC,
+		TelegramUp:  bot.Connected,
+		Logger:      log,
+	})
+
+	// 9. Общая судьба: ошибка одного адаптера гасит второго, SIGTERM гасит обоих.
+	g, gctx := rungroup.New(ctx)
+	g.Go(func() error { return bot.Run(gctx) })
+	g.Go(func() error { return api.Run(gctx) })
+	return g.Wait()
 }

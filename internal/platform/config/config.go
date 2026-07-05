@@ -25,6 +25,11 @@ type Config struct {
 	// (librespeed нередко берёт далёкий сервер → заниженные цифры). Список ID:
 	// `librespeed-cli --list` на роутере.
 	SpeedTestServerID string `env:"SPEEDTEST_SERVER_ID" envDefault:""`
+	// HTTPAddr — адрес локального HTTP API для LuCI-панели (rpcd ucode-плагин
+	// ходит с localhost). Пусто = API выключен, поведение бота прежнее.
+	// Аутентификации у API нет — слушать задумано только 127.0.0.1; иной адрес
+	// не запрещаем (env — ответственность владельца), но адаптер ругается Warn.
+	HTTPAddr string `env:"HTTP_ADDR" envDefault:""`
 }
 
 // Load читает конфиг из ENV. Возвращает ошибку, если обязательные переменные пусты.
