@@ -111,9 +111,13 @@ func TestDevices_FullMapping(t *testing.T) {
 	}
 }
 
-// net.IP(nil).String() возвращает "<nil>" — в API обязана уходить пустая строка.
-func TestDevices_NilIPIsEmptyString(t *testing.T) {
-	dhcp := &stubDhcp{leases: []domain.Device{{MAC: mustMAC(t, "aa:bb:cc:11:22:33"), Hostname: "ghost"}}}
+// String() у nil И у пустого (len 0, но не nil) net.IP возвращает "<nil>" —
+// в API в обоих случаях обязана уходить пустая строка.
+func TestDevices_EmptyIPIsEmptyString(t *testing.T) {
+	dhcp := &stubDhcp{leases: []domain.Device{
+		{MAC: mustMAC(t, "aa:bb:cc:11:22:33"), Hostname: "ghost-nil"},                 // IP nil
+		{MAC: mustMAC(t, "11:22:33:44:55:66"), Hostname: "ghost-empty", IP: net.IP{}}, // пустой, не nil
+	}}
 	deps := testDeps()
 	deps.List = device.NewList(dhcp, &stubMACSet{}, &stubMACSet{}, &stubRateLimits{})
 
@@ -122,8 +126,10 @@ func TestDevices_NilIPIsEmptyString(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("тело не декодируется: %v", err)
 	}
-	if got := resp.Devices[0].IP; got != "" {
-		t.Errorf(`ip = %q, want "" (nil IP)`, got)
+	for _, d := range resp.Devices {
+		if d.IP != "" {
+			t.Errorf(`%s: ip = %q, want ""`, d.Hostname, d.IP)
+		}
 	}
 }
 
@@ -220,6 +226,8 @@ func TestSetLimit_BadRequests(t *testing.T) {
 		{"лимит сверх диапазона", `{"kbytes_per_sec":1000001}`, http.StatusBadRequest},
 		{"битый JSON", `{"kbytes`, http.StatusBadRequest},
 		{"неизвестное поле", `{"kbps":512}`, http.StatusBadRequest},
+		{"хвост после объекта", `{"kbytes_per_sec":512}{"kbytes_per_sec":9}`, http.StatusBadRequest},
+		{"мусор после объекта", `{"kbytes_per_sec":512}garbage`, http.StatusBadRequest},
 		{"тело больше килобайта", `{"kbytes_per_sec":` + strings.Repeat("1", 2048) + `}`, http.StatusRequestEntityTooLarge},
 	}
 	for _, tc := range tests {

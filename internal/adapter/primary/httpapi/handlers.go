@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 
@@ -54,10 +55,10 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, devicesResponse{Devices: devices})
 }
 
-// ipString — nil-безопасная строка: net.IP(nil).String() возвращает "<nil>",
-// в API это мусор — отдаём пустую строку.
+// ipString — строка без мусора: String() у nil И у пустого (len 0, но не nil)
+// net.IP возвращает "<nil>" — проверяем длину, как сам stdlib.
 func ipString(ip net.IP) string {
-	if ip == nil {
+	if len(ip) == 0 {
 		return ""
 	}
 	return ip.String()
@@ -102,7 +103,10 @@ func (s *Server) handleSetLimit(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		KBytesPerSec int `json:"kbytes_per_sec"`
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxLimitBodyBytes))
+	// MaxBytesReader получает РАЗВЁРНУТЫЙ writer: маркер close-after-reply при
+	// превышении лимита stdlib ставит через приватный интерфейс конкретного
+	// типа сервера, и обёртка access-лога его потеряла бы.
+	dec := json.NewDecoder(http.MaxBytesReader(baseWriter(w), r.Body, maxLimitBodyBytes))
 	// Опечатка в поле у клиента должна всплыть 400-й, а не молчаливым нулём.
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
@@ -112,6 +116,12 @@ func (s *Server) handleSetLimit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.writeError(w, http.StatusBadRequest, "некорректный JSON: "+err.Error())
+		return
+	}
+	// Decoder останавливается на первом JSON-значении — хвост (второй объект,
+	// мусор) без этой проверки прошёл бы молча, в обход строгости выше.
+	if err := dec.Decode(new(struct{})); !errors.Is(err, io.EOF) {
+		s.writeError(w, http.StatusBadRequest, "лишние данные после JSON-объекта")
 		return
 	}
 	rate, err := domain.NewRate(req.KBytesPerSec)

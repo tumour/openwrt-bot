@@ -40,3 +40,18 @@ func (w *statusWriter) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
+
+// Unwrap — идиома middleware Go 1.20+ (http.ResponseController и baseWriter
+// добираются до исходного writer'а сервера сквозь обёртку).
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// baseWriter снимает все обёртки до исходного ResponseWriter net/http.
+func baseWriter(w http.ResponseWriter) http.ResponseWriter {
+	for {
+		u, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return w
+		}
+		w = u.Unwrap()
+	}
+}
