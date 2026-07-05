@@ -1,0 +1,15 @@
+{
+	"luci-app-openwrt-bot": {
+		"description": "Доступ к панели OpenWrt Bot",
+		"read": {
+			"ubus": {
+				"luci.openwrt-bot": [ "status", "devices" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"luci.openwrt-bot": [ "bot", "vpn", "device_action", "set_limit" ]
+			}
+		}
+	}
+}

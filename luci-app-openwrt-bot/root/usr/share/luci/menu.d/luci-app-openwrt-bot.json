@@ -1,0 +1,13 @@
+{
+	"admin/services/openwrt-bot": {
+		"title": "OpenWrt Bot",
+		"order": 50,
+		"action": {
+			"type": "view",
+			"path": "openwrt-bot"
+		},
+		"depends": {
+			"acl": [ "luci-app-openwrt-bot" ]
+		}
+	}
+}
