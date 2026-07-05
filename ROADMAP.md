@@ -89,6 +89,15 @@
 - **Ловушка telebot v3.3.8:** `Stop()` виснет навсегда, если `Start()` не был вызван (send в небуферизованный `b.stop`) — поэтому отмена ctx в connect-фазе возвращается из Run без Stop; закреплено тестом. Второй нюанс: до `Start()` у telebot нет `stopClient`, т.е. `Raw` неотменяем — probeGetMe гоняет его в горутине с буферизованным каналом и бросает при отмене ctx (горутина доживает ≤ таймаута клиента, 1 мин).
 - Первые lifecycle-тесты telegram-пакета: httptest + `Offline: true` + подмена публичного `bot.URL`; backoff-значения инжектятся в поля структур.
 
+### Итерация 11 — HTTP API для LuCI-панели (2026-07-05)
+- **Зачем:** локальный HTTP API поверх ТЕХ ЖЕ use cases — его дёргает rpcd ucode-плагин будущей LuCI-панели с localhost. Демонстрация ядра гексагональности: у приложения появился второй вход, domain/app не изменились ни строчкой. Primary-адаптеры друг о друге не знают — единственная связь (`TelegramUp: bot.Connected`) живёт в composition root.
+- **Пакет `httpapi`** (не `http` — шадоуинг stdlib). REST на ServeMux Go 1.23 (method+wildcard, ноль новых зависимостей): `GET /api/v1/devices`, `POST /api/v1/devices/{mac}/{ban|unban|vpnoff|vpnon|unlimit}`, `POST .../limit` `{"kbytes_per_sec":N}`, `GET /api/v1/health` → `{"status":"ok","telegram":"connected"|"connecting"}`. Имена действий = команды бота.
+- **Решения контракта:** поле лимита `limit_kbytes_per_sec`/`kbytes_per_sec`, НЕ «kbps» (читается как килобиты/с — готовый ×8-баг в панели; язык nftables — «kbytes/second»). Успех мутаций — `200 {"ok":true}`, не 204: клиенту-плагину удобен инвариант «каждый ответ — JSON». 404/405 — plain-text от stdlib mux (осознанно, см. package doc). Валидация на границе (NewMAC/NewRate до Execute) → все ошибки Execute инфраструктурные → 500 с generic-телом, полная цепочка в slog (error boundary = контракт telegram Log-middleware).
+- **Server:** Deps-struct конкретными use cases (паритет telegram.Handlers); `net.Listen` синхронно — занятый порт = класс config-ошибок, fail fast всего процесса; `BaseContext = runCtx` (SIGTERM отменяет in-flight exec'и — паритет ит. 8); Shutdown 5s → Close; таймауты ReadHeader/Read/Write/Idle (slowloris); Warn при не-loopback (auth у API нет — задуман только для 127.0.0.1). Access-лог как telegram Log, но успешный `/health` — Debug (панель поллит постоянно, Info вымыл бы кольцо logread).
+- **`telegram.Bot.Connected()`** — `atomic.Bool`: пишут connect-фаза Run и поллер (в state-transition точках), читает /health. Лаг обнаружения оффлайна ≤ long-poll timeout (10s) — приемлемо для health.
+- **`platform/rungroup`** — мини-errgroup на stdlib (New/Go/Wait, ~30 строк + тесты): общая судьба двух блокирующих Run (ошибка одного гасит второго), без зависимости x/sync ради тридцати строк. `HTTP_ADDR` пуст → ровно прежнее поведение (один bot.Run).
+- Ловушки stdlib, закрытые тестами: `net.IP(nil).String()=="<nil>"` → `""`; пустой список сериализуется `[]`, не `null`; `*http.MaxBytesError` → 413; `DisallowUnknownFields` (опечатка клиента → 400, не молчаливый ноль); дренаж канала Serve после Shutdown (не течь горутиной).
+
 ## Следующее
 
 ### Дальше (когда понадобится)

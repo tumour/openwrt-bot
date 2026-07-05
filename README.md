@@ -20,7 +20,7 @@ nftables, ubus) — снаружи, подключается через инте
         ┌──────────────▼───┐      ┌───────▼──────────────┐
         │ adapter/secondary│      │ adapter/primary       │
         │ (driven)         │      │ (driving)             │
-        │ nftables, ubus   │      │ telegram bot          │
+        │ nftables, ubus   │      │ telegram bot, http api│
         └──────────────────┘      └───────────────────────┘
 
                 composition root: cmd/bot/main.go
@@ -46,6 +46,7 @@ nftables, ubus) — снаружи, подключается через инте
 | `internal/domain/` | Entities, Value Objects, доменные ошибки. Pure Go. |
 | `internal/app/<feature>/` | Use cases, сгруппированные по фичам. **Каждая фича** — отдельная папка (`device/`, `status/`, ...) с собственными портами (`ports.go`) и use cases. Не плоский `app/`. |
 | `internal/adapter/primary/telegram/` | Driving adapter: принимает входы из Telegram, вызывает use cases. |
+| `internal/adapter/primary/httpapi/` | Driving adapter №2: локальный HTTP API для LuCI-панели — **те же use cases**, другой вход. Primary-адаптеры друг о друге не знают. |
 | `internal/adapter/secondary/{nftables,ubus,system}/` | Driven adapters: реализации портов через exec. |
 | `internal/platform/` | Cross-cutting infrastructure: config, logger, graceful shutdown. |
 
