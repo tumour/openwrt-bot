@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/middleware"
@@ -32,6 +33,9 @@ type Bot struct {
 	// connectBackoff — ритм дозвона до Telegram; поле, а не локальная переменная,
 	// чтобы тесты инжектили малые значения.
 	connectBackoff backoff
+	// connected — состояние Telegram-канала. Пишут connect-фаза Run и поллер
+	// (каждый из своей горутины), читает HTTP API через Connected — atomic.
+	connected atomic.Bool
 
 	// runCtx — базовый ctx из Run. Пишется один раз ДО старта поллера
 	// (go-statement даёт happens-before), читается track-middleware.
@@ -48,21 +52,22 @@ type Bot struct {
 // всплывают на старте, а не когда появится сеть. Handlers инжектируются
 // снаружи — это позволяет тестировать бота с фейк-handler'ами.
 func NewBot(cfg Config, logger *slog.Logger, h Handlers) (*Bot, error) {
-	tb, err := tele.NewBot(tele.Settings{
-		Token:   cfg.Token,
-		Offline: true,
-		Poller:  newResilientPoller(logger),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("init telebot: %w", err)
-	}
-
+	// b — до telebot: поллеру нужен указатель на b.connected (он переключает
+	// состояние канала при оффлайне/восстановлении).
 	b := &Bot{
-		bot:            tb,
 		logger:         logger,
 		menu:           menuCommands(h),
 		connectBackoff: newBackoff(),
 	}
+	tb, err := tele.NewBot(tele.Settings{
+		Token:   cfg.Token,
+		Offline: true,
+		Poller:  newResilientPoller(logger, &b.connected),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init telebot: %w", err)
+	}
+	b.bot = tb
 
 	// Порядок middleware важен: сначала Auth (чтобы не логировать спам от чужих
 	// и не считать его in-flight), затем track (учёт + базовый ctx), потом Log.
@@ -74,6 +79,11 @@ func NewBot(cfg Config, logger *slog.Logger, h Handlers) (*Bot, error) {
 
 	return b, nil
 }
+
+// Connected — состояние Telegram-канала: true между успешным подключением и
+// уходом поллера в оффлайн. Потребитель — HTTP API (/health); получает метод
+// как func() bool через composition root: primary-адаптеры друг о друге не знают.
+func (b *Bot) Connected() bool { return b.connected.Load() }
 
 // track сопровождает каждый авторизованный апдейт: кладёт базовый ctx приложения
 // (handlers строят от него таймауты → shutdown отменяет их exec'и) и регистрирует
@@ -146,6 +156,7 @@ func (b *Bot) connect(ctx context.Context) bool {
 			// До go Start() — happens-before; telebot читает Me только при
 			// обработке апдейтов, а они текут после Start.
 			b.bot.Me = user
+			b.connected.Store(true)
 			b.logger.Info("telegram connected", "username", user.Username)
 			return true
 		}

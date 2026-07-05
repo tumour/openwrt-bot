@@ -34,11 +34,17 @@ func TestConnect_Success(t *testing.T) {
 	defer srv.Close()
 
 	b := newTestBot(t, srv.URL)
+	if b.Connected() {
+		t.Error("Connected() = true до подключения, want false")
+	}
 	if !b.connect(context.Background()) {
 		t.Fatal("connect() = false, want true")
 	}
 	if b.bot.Me == nil || b.bot.Me.Username != "testbot" {
 		t.Errorf("bot.Me = %+v, want username testbot", b.bot.Me)
+	}
+	if !b.Connected() {
+		t.Error("Connected() = false после подключения, want true")
 	}
 }
 

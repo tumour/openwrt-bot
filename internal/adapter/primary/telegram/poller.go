@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	tele "gopkg.in/telebot.v3"
@@ -24,14 +25,18 @@ type resilientPoller struct {
 	// мьютекс не нужен.
 	lastUpdateID int
 	backoff      backoff // тесты инжектят малые значения
-	logger       *slog.Logger
+	// connected — состояние Telegram-канала, принадлежит telegram.Bot (его API
+	// Connected); поллер лишь переключает его в state-transition точках.
+	connected *atomic.Bool
+	logger    *slog.Logger
 }
 
-func newResilientPoller(logger *slog.Logger) *resilientPoller {
+func newResilientPoller(logger *slog.Logger, connected *atomic.Bool) *resilientPoller {
 	return &resilientPoller{
-		timeout: 10 * time.Second,
-		backoff: newBackoff(),
-		logger:  logger,
+		timeout:   10 * time.Second,
+		backoff:   newBackoff(),
+		connected: connected,
+		logger:    logger,
 	}
 }
 
@@ -69,6 +74,7 @@ func (p *resilientPoller) Poll(b *tele.Bot, dest chan tele.Update, stop chan str
 			// State-transition: Warn один раз при уходе в оффлайн, повторы —
 			// Debug, иначе ночь без VPN вымывает 64КБ-кольцо logread.
 			if !offline {
+				p.connected.Store(false)
 				p.logger.Warn("telegram недоступен, ухожу в retry", "err", err)
 				offline = true
 			} else {
@@ -83,6 +89,7 @@ func (p *resilientPoller) Poll(b *tele.Bot, dest chan tele.Update, stop chan str
 		}
 
 		if offline {
+			p.connected.Store(true)
 			p.logger.Info("telegram снова доступен")
 			offline = false
 		}

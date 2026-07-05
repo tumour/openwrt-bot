@@ -67,7 +67,7 @@ func TestPoller_DeliversAndAdvancesOffset(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := newResilientPoller(testLogger())
+	p := newResilientPoller(testLogger(), new(atomic.Bool))
 	dest := make(chan tele.Update, 1)
 	stop := make(chan struct{})
 	done := startPoll(p, newOfflineTeleBot(t, srv.URL), dest, stop)
@@ -111,7 +111,7 @@ func TestPoller_BackoffAndRecovery(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := newResilientPoller(testLogger())
+	p := newResilientPoller(testLogger(), new(atomic.Bool))
 	p.backoff = backoff{min: time.Millisecond, max: 4 * time.Millisecond}
 	dest := make(chan tele.Update, 1)
 	stop := make(chan struct{})
@@ -145,7 +145,7 @@ func TestPoller_StopInterruptsBackoffSleep(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := newResilientPoller(testLogger())
+	p := newResilientPoller(testLogger(), new(atomic.Bool))
 	p.backoff = backoff{min: 10 * time.Second, max: 10 * time.Second} // сон дольше теста
 	dest := make(chan tele.Update)
 	stop := make(chan struct{})
@@ -164,7 +164,7 @@ func TestPoller_StopUnblocksDestSend(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := newResilientPoller(testLogger())
+	p := newResilientPoller(testLogger(), new(atomic.Bool))
 	dest := make(chan tele.Update) // небуферизованный, читателя нет
 	stop := make(chan struct{})
 	done := startPoll(p, newOfflineTeleBot(t, srv.URL), dest, stop)
@@ -172,6 +172,47 @@ func TestPoller_StopUnblocksDestSend(t *testing.T) {
 	time.Sleep(50 * time.Millisecond) // дать поллеру заблокироваться на dest <- u
 	close(stop)
 	waitDone(t, done, time.Second, "Poll завис на отправке в dest: дедлок LongPoller не вылечен")
+}
+
+// Поллер переключает состояние Telegram-канала (Bot.Connected) ровно в
+// state-transition точках: false при уходе в оффлайн, true при восстановлении.
+func TestPoller_ConnectedTransitions(t *testing.T) {
+	var served atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch n := served.Add(1); {
+		case n <= 2:
+			fmt.Fprint(w, `{"ok":false,"error_code":400,"description":"boom"}`)
+		default:
+			time.Sleep(10 * time.Millisecond)
+			fmt.Fprint(w, `{"ok":true,"result":[]}`)
+		}
+	}))
+	defer srv.Close()
+
+	connected := new(atomic.Bool)
+	connected.Store(true) // как после connect-фазы Run
+	p := newResilientPoller(testLogger(), connected)
+	p.backoff = backoff{min: time.Millisecond, max: 4 * time.Millisecond}
+	dest := make(chan tele.Update, 1)
+	stop := make(chan struct{})
+	done := startPoll(p, newOfflineTeleBot(t, srv.URL), dest, stop)
+
+	waitFor := func(want bool, msg string) {
+		t.Helper()
+		deadline := time.After(2 * time.Second)
+		for connected.Load() != want {
+			select {
+			case <-deadline:
+				t.Fatal(msg)
+			case <-time.After(2 * time.Millisecond):
+			}
+		}
+	}
+	waitFor(false, "оффлайн не переключил connected в false")
+	waitFor(true, "восстановление не вернуло connected в true")
+
+	close(stop)
+	waitDone(t, done, 2*time.Second, "Poll не завершился после close(stop)")
 }
 
 // 429: поллер уважает retry_after Telegram вместо своего backoff.
@@ -187,7 +228,7 @@ func TestPoller_FloodRespectsRetryAfter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := newResilientPoller(testLogger())
+	p := newResilientPoller(testLogger(), new(atomic.Bool))
 	p.backoff = backoff{min: time.Millisecond, max: 2 * time.Millisecond} // без flood ретраил бы мгновенно
 	dest := make(chan tele.Update, 1)
 	stop := make(chan struct{})
