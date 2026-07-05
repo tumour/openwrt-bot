@@ -25,12 +25,16 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/tumour/openwrt-bot/internal/app/device"
 )
 
 // Deps — зависимости endpoint'ов, по образцу telegram.Handlers: конкретные
 // типы use cases в struct дают compile-time полноту проводки composition root
 // (добавил поле — забыл прокинуть = nil deref на первом запросе, видно сразу).
 type Deps struct {
+	List *device.List
+
 	// TelegramUp — состояние Telegram-канала для /health. func() bool, а не
 	// импорт telegram: primary-адаптеры друг о друге не знают, связывает main.
 	TelegramUp func() bool
@@ -74,6 +78,7 @@ func NewServer(addr string, deps Deps) *Server {
 func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+healthPath, s.handleHealth)
+	mux.HandleFunc("GET /api/v1/devices", s.handleDevices)
 	return mux
 }
 
