@@ -2,10 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 
 	"github.com/tumour/openwrt-bot/internal/app/device"
+	"github.com/tumour/openwrt-bot/internal/domain"
 )
 
 // deviceJSON — DTO этого адаптера: JSON-контракт LuCI-панели фиксируется
@@ -57,4 +61,72 @@ func ipString(ip net.IP) string {
 		return ""
 	}
 	return ip.String()
+}
+
+// macAction — каркас мутаций по MAC: PathValue → NewMAC (валидация на границе,
+// как в telegram-handlers: use case по построению получает валидный value
+// object, любые ошибки Execute — инфраструктурные → 500) → exec → 200 ok.
+// Разница между endpoint'ами — только Input-тип use case, сильнее не обобщить.
+func (s *Server) macAction(exec func(ctx context.Context, mac domain.MAC) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		raw := r.PathValue("mac") // сегмент уже URL-decoded; NewMAC нормализует регистр и '-'
+		mac, err := domain.NewMAC(raw)
+		if err != nil {
+			s.writeError(w, http.StatusBadRequest, "невалидный MAC: "+raw)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+		defer cancel()
+
+		if err := exec(ctx, mac); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		s.writeJSON(w, http.StatusOK, okResponse{OK: true})
+	}
+}
+
+// maxLimitBodyBytes — потолок тела /limit; единственное тело в API —
+// {"kbytes_per_sec":N}, килобайта хватает с запасом.
+const maxLimitBodyBytes = 1 << 10
+
+func (s *Server) handleSetLimit(w http.ResponseWriter, r *http.Request) {
+	raw := r.PathValue("mac")
+	mac, err := domain.NewMAC(raw)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "невалидный MAC: "+raw)
+		return
+	}
+
+	var req struct {
+		KBytesPerSec int `json:"kbytes_per_sec"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxLimitBodyBytes))
+	// Опечатка в поле у клиента должна всплыть 400-й, а не молчаливым нулём.
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			s.writeError(w, http.StatusRequestEntityTooLarge, "тело запроса слишком большое")
+			return
+		}
+		s.writeError(w, http.StatusBadRequest, "некорректный JSON: "+err.Error())
+		return
+	}
+	rate, err := domain.NewRate(req.KBytesPerSec)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("невалидный лимит (1..1000000 КБ/с): %d", req.KBytesPerSec))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+
+	if _, err := s.deps.SetLimit.Execute(ctx, device.SetLimitInput{MAC: mac, Rate: rate}); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, okResponse{OK: true})
 }

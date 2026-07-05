@@ -27,13 +27,20 @@ import (
 	"time"
 
 	"github.com/tumour/openwrt-bot/internal/app/device"
+	"github.com/tumour/openwrt-bot/internal/domain"
 )
 
 // Deps — зависимости endpoint'ов, по образцу telegram.Handlers: конкретные
 // типы use cases в struct дают compile-time полноту проводки composition root
 // (добавил поле — забыл прокинуть = nil deref на первом запросе, видно сразу).
 type Deps struct {
-	List *device.List
+	List        *device.List
+	Ban         *device.Ban
+	Unban       *device.Unban
+	VPNOff      *device.DisableVPN
+	VPNOn       *device.EnableVPN
+	SetLimit    *device.SetLimit
+	RemoveLimit *device.RemoveLimit
 
 	// TelegramUp — состояние Telegram-канала для /health. func() bool, а не
 	// импорт telegram: primary-адаптеры друг о друге не знают, связывает main.
@@ -79,6 +86,28 @@ func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+healthPath, s.handleHealth)
 	mux.HandleFunc("GET /api/v1/devices", s.handleDevices)
+	// Имена действий = команды бота: у панели и Telegram один словарь.
+	mux.HandleFunc("POST /api/v1/devices/{mac}/ban", s.macAction(func(ctx context.Context, mac domain.MAC) error {
+		_, err := s.deps.Ban.Execute(ctx, device.BanInput{MAC: mac})
+		return err
+	}))
+	mux.HandleFunc("POST /api/v1/devices/{mac}/unban", s.macAction(func(ctx context.Context, mac domain.MAC) error {
+		_, err := s.deps.Unban.Execute(ctx, device.UnbanInput{MAC: mac})
+		return err
+	}))
+	mux.HandleFunc("POST /api/v1/devices/{mac}/vpnoff", s.macAction(func(ctx context.Context, mac domain.MAC) error {
+		_, err := s.deps.VPNOff.Execute(ctx, device.DisableVPNInput{MAC: mac})
+		return err
+	}))
+	mux.HandleFunc("POST /api/v1/devices/{mac}/vpnon", s.macAction(func(ctx context.Context, mac domain.MAC) error {
+		_, err := s.deps.VPNOn.Execute(ctx, device.EnableVPNInput{MAC: mac})
+		return err
+	}))
+	mux.HandleFunc("POST /api/v1/devices/{mac}/unlimit", s.macAction(func(ctx context.Context, mac domain.MAC) error {
+		_, err := s.deps.RemoveLimit.Execute(ctx, device.RemoveLimitInput{MAC: mac})
+		return err
+	}))
+	mux.HandleFunc("POST /api/v1/devices/{mac}/limit", s.handleSetLimit)
 	return mux
 }
 
