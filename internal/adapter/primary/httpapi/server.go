@@ -45,7 +45,6 @@ type Deps struct {
 	// TelegramUp — состояние Telegram-канала для /health. func() bool, а не
 	// импорт telegram: primary-адаптеры друг о друге не знают, связывает main.
 	TelegramUp func() bool
-	Logger     *slog.Logger
 }
 
 // Server — HTTP API с lifecycle-контрактом telegram.Bot.Run: блокирующий
@@ -68,8 +67,10 @@ const (
 	healthPath = "/api/v1/health"
 )
 
-func NewServer(addr string, deps Deps) *Server {
-	s := &Server{addr: addr, deps: deps, logger: deps.Logger}
+// NewServer — сигнатура в паритет telegram.NewBot(cfg, logger, handlers):
+// логгер — отдельный явный параметр, Deps — только зависимости endpoint'ов.
+func NewServer(addr string, logger *slog.Logger, deps Deps) *Server {
+	s := &Server{addr: addr, deps: deps, logger: logger}
 	s.srv = &http.Server{
 		Handler:           s.accessLog(s.routes()),
 		ReadHeaderTimeout: 5 * time.Second,  // slowloris
@@ -77,7 +78,7 @@ func NewServer(addr string, deps Deps) *Server {
 		WriteTimeout:      15 * time.Second, // > requestTimeout: долгий use case успевает ответить
 		IdleTimeout:       60 * time.Second, // keep-alive для rpcd
 		// Паники и протокольные ошибки net/http — в structured log.
-		ErrorLog: slog.NewLogLogger(deps.Logger.Handler(), slog.LevelError),
+		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
 	return s
 }

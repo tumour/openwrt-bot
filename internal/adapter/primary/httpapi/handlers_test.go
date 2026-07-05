@@ -94,7 +94,7 @@ func TestDevices_FullMapping(t *testing.T) {
 		&stubRateLimits{limits: map[domain.MAC]domain.Rate{mac: mustRate(t, 512)}},
 	)
 
-	rec := do(NewServer("127.0.0.1:0", deps), http.MethodGet, "/api/v1/devices", nil)
+	rec := do(NewServer("127.0.0.1:0", testLogger(), deps), http.MethodGet, "/api/v1/devices", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
 	}
@@ -121,7 +121,7 @@ func TestDevices_EmptyIPIsEmptyString(t *testing.T) {
 	deps := testDeps()
 	deps.List = device.NewList(dhcp, &stubMACSet{}, &stubMACSet{}, &stubRateLimits{})
 
-	rec := do(NewServer("127.0.0.1:0", deps), http.MethodGet, "/api/v1/devices", nil)
+	rec := do(NewServer("127.0.0.1:0", testLogger(), deps), http.MethodGet, "/api/v1/devices", nil)
 	var resp devicesResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("тело не декодируется: %v", err)
@@ -138,7 +138,7 @@ func TestDevices_EmptyIsArrayNotNull(t *testing.T) {
 	deps := testDeps()
 	deps.List = device.NewList(&stubDhcp{}, &stubMACSet{}, &stubMACSet{}, &stubRateLimits{})
 
-	rec := do(NewServer("127.0.0.1:0", deps), http.MethodGet, "/api/v1/devices", nil)
+	rec := do(NewServer("127.0.0.1:0", testLogger(), deps), http.MethodGet, "/api/v1/devices", nil)
 	if body := rec.Body.String(); !strings.Contains(body, `"devices":[]`) {
 		t.Errorf(`тело не содержит "devices":[] — пустой список утёк как null: %s`, body)
 	}
@@ -163,7 +163,7 @@ func newMutationFixture(t *testing.T) *mutationFixture {
 	deps.VPNOn = device.NewEnableVPN(f.direct)
 	deps.SetLimit = device.NewSetLimit(f.limits)
 	deps.RemoveLimit = device.NewRemoveLimit(f.limits)
-	f.server = NewServer("127.0.0.1:0", deps)
+	f.server = NewServer("127.0.0.1:0", testLogger(), deps)
 	return f
 }
 
@@ -250,9 +250,9 @@ func TestMutations_ErrorBoundary(t *testing.T) {
 	var logBuf bytes.Buffer
 	deps := testDeps()
 	deps.Ban = device.NewBan(&stubMACSet{err: errors.New("nft: exit status 1 (stderr: table missing)")})
-	deps.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
-	rec := do(NewServer("127.0.0.1:0", deps), http.MethodPost, "/api/v1/devices/aa:bb:cc:11:22:33/ban", nil)
+	rec := do(NewServer("127.0.0.1:0", logger, deps), http.MethodPost, "/api/v1/devices/aa:bb:cc:11:22:33/ban", nil)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
 	}
@@ -283,9 +283,9 @@ func TestDevices_ErrorBoundary(t *testing.T) {
 	deps := testDeps()
 	deps.List = device.NewList(&stubDhcp{err: cause}, &stubMACSet{}, &stubMACSet{}, &stubRateLimits{})
 	var logBuf bytes.Buffer
-	deps.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
-	rec := do(NewServer("127.0.0.1:0", deps), http.MethodGet, "/api/v1/devices", nil)
+	rec := do(NewServer("127.0.0.1:0", logger, deps), http.MethodGet, "/api/v1/devices", nil)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
 	}

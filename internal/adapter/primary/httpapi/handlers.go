@@ -64,16 +64,25 @@ func ipString(ip net.IP) string {
 	return ip.String()
 }
 
-// macAction — каркас мутаций по MAC: PathValue → NewMAC (валидация на границе,
-// как в telegram-handlers: use case по построению получает валидный value
-// object, любые ошибки Execute — инфраструктурные → 500) → exec → 200 ok.
-// Разница между endpoint'ами — только Input-тип use case, сильнее не обобщить.
+// pathMAC достаёт и валидирует {mac} из пути (валидация на границе, как в
+// telegram-handlers: use case по построению получает валидный value object,
+// любые ошибки Execute — инфраструктурные → 500). false = ответ уже записан.
+func (s *Server) pathMAC(w http.ResponseWriter, r *http.Request) (domain.MAC, bool) {
+	raw := r.PathValue("mac") // сегмент уже URL-decoded; NewMAC нормализует регистр и '-'
+	mac, err := domain.NewMAC(raw)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "невалидный MAC: "+raw)
+		return "", false
+	}
+	return mac, true
+}
+
+// macAction — каркас мутаций по MAC: pathMAC → exec → 200 ok. Разница между
+// endpoint'ами — только Input-тип use case, сильнее не обобщить.
 func (s *Server) macAction(exec func(ctx context.Context, mac domain.MAC) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		raw := r.PathValue("mac") // сегмент уже URL-decoded; NewMAC нормализует регистр и '-'
-		mac, err := domain.NewMAC(raw)
-		if err != nil {
-			s.writeError(w, http.StatusBadRequest, "невалидный MAC: "+raw)
+		mac, ok := s.pathMAC(w, r)
+		if !ok {
 			return
 		}
 
@@ -93,10 +102,8 @@ func (s *Server) macAction(exec func(ctx context.Context, mac domain.MAC) error)
 const maxLimitBodyBytes = 1 << 10
 
 func (s *Server) handleSetLimit(w http.ResponseWriter, r *http.Request) {
-	raw := r.PathValue("mac")
-	mac, err := domain.NewMAC(raw)
-	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "невалидный MAC: "+raw)
+	mac, ok := s.pathMAC(w, r)
+	if !ok {
 		return
 	}
 

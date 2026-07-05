@@ -16,10 +16,7 @@ import (
 func testLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 func testDeps() Deps {
-	return Deps{
-		TelegramUp: func() bool { return true },
-		Logger:     testLogger(),
-	}
+	return Deps{TelegramUp: func() bool { return true }}
 }
 
 // do прогоняет запрос через полный Handler сервера (роуты + access-лог).
@@ -34,7 +31,7 @@ func TestServe_ServesAndShutsDownGracefully(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	s := NewServer(ln.Addr().String(), testDeps())
+	s := NewServer(ln.Addr().String(), testLogger(), testDeps())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -72,7 +69,7 @@ func TestRun_ListenError(t *testing.T) {
 	}
 	defer ln.Close()
 
-	s := NewServer(ln.Addr().String(), testDeps())
+	s := NewServer(ln.Addr().String(), testLogger(), testDeps())
 	if err := s.Run(context.Background()); err == nil {
 		t.Fatal("Run() = nil на занятом порту, want error")
 	}
@@ -90,7 +87,7 @@ func TestHealth_TelegramState(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			deps := testDeps()
 			deps.TelegramUp = func() bool { return tc.up }
-			rec := do(NewServer("127.0.0.1:0", deps), http.MethodGet, healthPath, nil)
+			rec := do(NewServer("127.0.0.1:0", testLogger(), deps), http.MethodGet, healthPath, nil)
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200", rec.Code)

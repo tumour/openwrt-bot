@@ -108,7 +108,7 @@ func run() error {
 
 	// 8. HTTP API — второй primary adapter поверх ТЕХ ЖЕ экземпляров use cases.
 	// TelegramUp — единственная связь primary↔primary, и живёт она только здесь.
-	api := httpapi.NewServer(cfg.HTTPAddr, httpapi.Deps{
+	api := httpapi.NewServer(cfg.HTTPAddr, log, httpapi.Deps{
 		List:        listUC,
 		Ban:         banUC,
 		Unban:       unbanUC,
@@ -117,7 +117,6 @@ func run() error {
 		SetLimit:    setLimitUC,
 		RemoveLimit: removeLimitUC,
 		TelegramUp:  bot.Connected,
-		Logger:      log,
 	})
 
 	// 9. Общая судьба: ошибка одного адаптера гасит второго, SIGTERM гасит обоих.

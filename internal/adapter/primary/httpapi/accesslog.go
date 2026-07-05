@@ -29,8 +29,9 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 	})
 }
 
-// statusWriter перехватывает код ответа для access-лога. Flush/Hijack
-// сознательно не пробрасываются: стриминга и websocket в API нет.
+// statusWriter перехватывает код ответа для access-лога. Flush/Hijack не
+// реализованы: стриминга и websocket в API нет, а кому нужен исходный writer
+// (http.ResponseController, baseWriter) — доберётся через Unwrap.
 type statusWriter struct {
 	http.ResponseWriter
 	status int
