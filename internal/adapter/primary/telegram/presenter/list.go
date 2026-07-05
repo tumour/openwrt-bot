@@ -76,7 +76,9 @@ func hostOrDefault(v device.View) string {
 }
 
 func ipOrDash(v device.View) string {
-	if v.Device.IP == nil {
+	// len, не nil-check: String() и у пустого (len 0, но не nil) net.IP
+	// возвращает "<nil>" — та же ловушка stdlib, что закрыта в httpapi.ipString.
+	if len(v.Device.IP) == 0 {
 		return "—"
 	}
 	return v.Device.IP.String()

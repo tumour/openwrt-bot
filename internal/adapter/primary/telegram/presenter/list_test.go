@@ -112,3 +112,13 @@ func TestCardGone_EscapesMAC(t *testing.T) {
 		t.Errorf("MAC не экранирован: %q", got)
 	}
 }
+
+// String() у пустого (len 0, но не nil) net.IP возвращает "<nil>" — в карточке
+// должен быть прочерк, как и для nil (та же ловушка stdlib, что в httpapi).
+func TestDeviceCard_EmptyIPIsDash(t *testing.T) {
+	v := view(t, "ghost", "", false, false)
+	v.Device.IP = net.IP{}
+	if got := DeviceCard(v); !strings.Contains(got, "IP: —") || strings.Contains(got, "nil") {
+		t.Errorf("пустой IP отрисован неверно: %q", got)
+	}
+}
