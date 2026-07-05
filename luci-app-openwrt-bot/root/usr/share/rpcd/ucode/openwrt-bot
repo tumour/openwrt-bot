@@ -1,0 +1,167 @@
+// rpcd-плагин LuCI-панели openwrt-bot: ubus-объект luci.openwrt-bot.
+// Два слоя (см. API.md):
+//   control plane — exec тумблеров /usr/bin/bot и /usr/bin/vpn; работает
+//     всегда, даже при мёртвом боте (иначе панель не смогла бы его включить);
+//   device plane — прокси в HTTP API бота на 127.0.0.1:8787.
+//
+// HTTP — через uclient-fetch отдельным процессом, СОЗНАТЕЛЬНО не через
+// ucode-модуль uclient: тому нужен uloop.run(), а плагин исполняется внутри
+// процесса rpcd с его собственным главным uloop — вложенный run/end рискует
+// завершить цикл демона. Отдельный процесс изолирует это полностью, ценой
+// потери тела ответа при HTTP >= 400 (приемлемо: аргументы валидируются до
+// запроса, а детали 500-х бот пишет в свой лог).
+//
+// Санитация: в shell и URL попадают ТОЛЬКО элементы whitelist-массивов и
+// MAC, прошедший регэксп, — пользовательские строки не подставляются никуда.
+'use strict';
+
+import { popen, access } from 'fs';
+
+const API_BASE = 'http://127.0.0.1:8787';
+const HTTP_TIMEOUT_S = 5;
+
+const BOT_ACTIONS = ['on', 'off', 'restart'];
+const VPN_ACTIONS = ['on', 'off'];
+const DEVICE_ACTIONS = ['ban', 'unban', 'vpnoff', 'vpnon', 'unlimit'];
+
+function shellquote(s) {
+	return `'${replace(s, "'", "'\\''")}'`;
+}
+
+// run — exec с кодом возврата и объединённым выводом (для тумблеров важен
+// и текст, и код; stderr человекочитаем и уходит в панель как есть).
+function run(cmd) {
+	const p = popen(cmd + ' 2>&1');
+	if (!p)
+		return { code: -1, output: '' };
+	const output = trim(p.read('all') ?? '');
+	return { code: p.close(), output };
+}
+
+function valid_mac(mac) {
+	return type(mac) == 'string' &&
+		match(mac, /^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$/) != null;
+}
+
+// api — вызов HTTP API бота. --no-proxy обязателен: uclient-fetch по
+// умолчанию уважает proxy-env, а localhost не должен уезжать в socks.
+// Ошибки — единый словарь: bot_down | http_<code> | bad_json | текст бота.
+function api(method, path, payload) {
+	let cmd = `uclient-fetch -q -O - --no-proxy --timeout=${HTTP_TIMEOUT_S}`;
+	if (method == 'POST')
+		cmd += ' --post-data=' + shellquote(payload ?? '');
+	cmd += ' ' + shellquote(API_BASE + path);
+
+	const r = run(cmd);
+	if (r.code != 0) {
+		// Тело при >=400 uclient-fetch не отдаёт — различаем по stderr.
+		const m = match(r.output, /HTTP error (\d+)/);
+		return { error: m ? 'http_' + m[1] : 'bot_down' };
+	}
+	let data;
+	try {
+		data = json(r.output);
+	} catch {
+		return { error: 'bad_json' };
+	}
+	return { ok: true, data };
+}
+
+const methods = {
+	// read: состояние трёх служб одним вызовом — панель поллит его каждые 5с.
+	status: {
+		call: function() {
+			// pgrep по полному пути бинаря — тот же предикат, что у тумблера
+			// bot (is_running): CLI и панель никогда не разойдутся в диагнозе.
+			const pg = run('pgrep -f /usr/bin/openwrt-bot');
+			const running = pg.code == 0 && length(pg.output) > 0;
+			// VPN: наличие — feature detection (на роутере без openwrt-vpn
+			// карточка честно скажет «не установлен»); поднятость — socks
+			// 10808 слушает (предикат тумблеров bot и vpn).
+			const vpn_installed = !!access('/usr/bin/vpn', 'x');
+			const vpn_up = run('netstat -lnt | grep -q 127.0.0.1:10808').code == 0;
+
+			let api_up = false, telegram = null;
+			if (running) {
+				const h = api('GET', '/api/v1/health');
+				if (h.ok) {
+					api_up = true;
+					telegram = h.data.telegram;
+				}
+			}
+			return {
+				bot: { running, pid: running ? int(split(pg.output, '\n')[0]) : null },
+				vpn: { installed: vpn_installed, up: vpn_up },
+				api: { up: api_up },
+				telegram, // "connected" | "connecting" | null (API недоступен)
+			};
+		},
+	},
+
+	// write: тумблер бота. В shell уходит элемент whitelist, не ввод.
+	bot: {
+		args: { action: 'action' },
+		call: function(request) {
+			const action = request.args.action;
+			if (!(action in BOT_ACTIONS))
+				return { error: 'bad_action' };
+			const r = run('/usr/bin/bot ' + action);
+			return { ok: r.code == 0, output: r.output };
+		},
+	},
+
+	// write: тумблер VPN (LAN-wide, скрипт из репо openwrt-vpn).
+	vpn: {
+		args: { action: 'action' },
+		call: function(request) {
+			if (!access('/usr/bin/vpn', 'x'))
+				return { error: 'vpn_not_installed' };
+			const action = request.args.action;
+			if (!(action in VPN_ACTIONS))
+				return { error: 'bad_action' };
+			const r = run('/usr/bin/vpn ' + action);
+			return { ok: r.code == 0, output: r.output };
+		},
+	},
+
+	// read: список устройств — прокси GET /api/v1/devices как есть.
+	devices: {
+		call: function() {
+			const r = api('GET', '/api/v1/devices');
+			return r.ok ? r.data : { error: r.error };
+		},
+	},
+
+	// write: мутации без тела (ban/unban/vpnoff/vpnon/unlimit).
+	device_action: {
+		args: { mac: 'mac', action: 'action' },
+		call: function(request) {
+			const action = request.args.action;
+			const mac = request.args.mac;
+			if (!(action in DEVICE_ACTIONS))
+				return { error: 'bad_action' };
+			if (!valid_mac(mac))
+				return { error: 'bad_mac' };
+			const r = api('POST', `/api/v1/devices/${mac}/${action}`, '');
+			return r.ok ? r.data : { error: r.error };
+		},
+	},
+
+	// write: установка лимита скорости, КБайт/с (не kbps!).
+	set_limit: {
+		args: { mac: 'mac', kbytes_per_sec: 512 },
+		call: function(request) {
+			const mac = request.args.mac;
+			const kbps = request.args.kbytes_per_sec;
+			if (!valid_mac(mac))
+				return { error: 'bad_mac' };
+			if (type(kbps) != 'int' || kbps < 1 || kbps > 1000000)
+				return { error: 'bad_rate' };
+			const r = api('POST', `/api/v1/devices/${mac}/limit`,
+				sprintf('%J', { kbytes_per_sec: kbps }));
+			return r.ok ? r.data : { error: r.error };
+		},
+	},
+};
+
+return { 'luci.openwrt-bot': methods };
