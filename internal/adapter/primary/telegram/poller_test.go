@@ -176,16 +176,18 @@ func TestPoller_StopUnblocksDestSend(t *testing.T) {
 
 // Поллер переключает состояние Telegram-канала (Bot.Connected) ровно в
 // state-transition точках: false при уходе в оффлайн, true при восстановлении.
+// Сервер держит фазу ошибок, пока тест не увидит false — оба ожидания идут по
+// УСТОЙЧИВЫМ состояниям, короткое окно ловить не нужно (иначе тест флакует,
+// если горутину теста заспали дольше окна).
 func TestPoller_ConnectedTransitions(t *testing.T) {
-	var served atomic.Int32
+	var recovered atomic.Bool // false: сервер отвечает ошибками; true: успехом
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch n := served.Add(1); {
-		case n <= 2:
+		if !recovered.Load() {
 			fmt.Fprint(w, `{"ok":false,"error_code":400,"description":"boom"}`)
-		default:
-			time.Sleep(10 * time.Millisecond)
-			fmt.Fprint(w, `{"ok":true,"result":[]}`)
+			return
 		}
+		time.Sleep(10 * time.Millisecond)
+		fmt.Fprint(w, `{"ok":true,"result":[]}`)
 	}))
 	defer srv.Close()
 
@@ -209,13 +211,15 @@ func TestPoller_ConnectedTransitions(t *testing.T) {
 		}
 	}
 	waitFor(false, "оффлайн не переключил connected в false")
+	recovered.Store(true)
 	waitFor(true, "восстановление не вернуло connected в true")
 
 	close(stop)
 	waitDone(t, done, 2*time.Second, "Poll не завершился после close(stop)")
 }
 
-// 429: поллер уважает retry_after Telegram вместо своего backoff.
+// 429: поллер уважает retry_after Telegram вместо своего backoff, и НЕ считает
+// флуд оффлайном — канал жив, /health не должен показывать "connecting".
 func TestPoller_FloodRespectsRetryAfter(t *testing.T) {
 	var served atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -228,7 +232,9 @@ func TestPoller_FloodRespectsRetryAfter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := newResilientPoller(testLogger(), new(atomic.Bool))
+	connected := new(atomic.Bool)
+	connected.Store(true)
+	p := newResilientPoller(testLogger(), connected)
 	p.backoff = backoff{min: time.Millisecond, max: 2 * time.Millisecond} // без flood ретраил бы мгновенно
 	dest := make(chan tele.Update, 1)
 	stop := make(chan struct{})
@@ -237,6 +243,9 @@ func TestPoller_FloodRespectsRetryAfter(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	if n := served.Load(); n != 1 {
 		t.Errorf("запросов за 300ms = %d, want 1 (retry_after=1s игнорируется?)", n)
+	}
+	if !connected.Load() {
+		t.Error("flood переключил connected в false — 429 не оффлайн")
 	}
 
 	close(stop)

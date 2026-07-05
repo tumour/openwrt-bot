@@ -65,12 +65,21 @@ func (p *resilientPoller) Poll(b *tele.Bot, dest chan tele.Update, stop chan str
 				continue
 			}
 
-			delay := p.backoff.next()
+			// 429 — канал жив, Telegram лишь просит паузу: это НЕ оффлайн
+			// (connected не трогаем — /health не должен врать) и не авария.
 			var flood tele.FloodError
 			if errors.As(err, &flood) && flood.RetryAfter > 0 {
-				// 429: Telegram сам говорит, когда возвращаться.
-				delay = time.Duration(flood.RetryAfter) * time.Second
+				delay := time.Duration(flood.RetryAfter) * time.Second
+				p.logger.Info("telegram rate limit, жду", "retry_after", delay)
+				select {
+				case <-stop:
+					return
+				case <-time.After(delay):
+				}
+				continue
 			}
+
+			delay := p.backoff.next()
 			// State-transition: Warn один раз при уходе в оффлайн, повторы —
 			// Debug, иначе ночь без VPN вымывает 64КБ-кольцо logread.
 			if !offline {
