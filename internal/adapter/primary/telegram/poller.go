@@ -20,7 +20,6 @@ import (
 // безусловно и может навсегда заблокировать Stop.
 type resilientPoller struct {
 	timeout time.Duration // server-side long-poll timeout для getUpdates
-	limit   int           // 0 = дефолт Telegram
 	// lastUpdateID читается/пишется только горутиной Poll (как у LongPoller) —
 	// мьютекс не нужен.
 	lastUpdateID int
@@ -65,10 +64,15 @@ func (p *resilientPoller) Poll(b *tele.Bot, dest chan tele.Update, stop chan str
 				continue
 			}
 
-			// 429 — канал жив, Telegram лишь просит паузу: это НЕ оффлайн
-			// (connected не трогаем — /health не должен врать) и не авария.
+			// 429 — канал жив (сервер ответил), Telegram лишь просит паузу:
+			// это не оффлайн, а если мы БЫЛИ в оффлайне — это восстановление.
 			var flood tele.FloodError
 			if errors.As(err, &flood) && flood.RetryAfter > 0 {
+				if offline {
+					p.connected.Store(true)
+					p.logger.Info("telegram снова доступен")
+					offline = false
+				}
 				delay := time.Duration(flood.RetryAfter) * time.Second
 				p.logger.Info("telegram rate limit, жду", "retry_after", delay)
 				select {
@@ -124,9 +128,6 @@ func (p *resilientPoller) getUpdates(b *tele.Bot) ([]tele.Update, error) {
 	params := map[string]string{
 		"offset":  strconv.Itoa(p.lastUpdateID + 1),
 		"timeout": strconv.Itoa(int(p.timeout / time.Second)),
-	}
-	if p.limit != 0 {
-		params["limit"] = strconv.Itoa(p.limit)
 	}
 	data, err := b.Raw("getUpdates", params)
 	if err != nil {

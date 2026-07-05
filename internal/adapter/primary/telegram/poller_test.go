@@ -218,6 +218,48 @@ func TestPoller_ConnectedTransitions(t *testing.T) {
 	waitDone(t, done, 2*time.Second, "Poll не завершился после close(stop)")
 }
 
+// 429 в оффлайне — признак живого канала: сервер ответил, значит связь
+// восстановилась, connected обязан стать true ещё до паузы retry_after.
+// Как и в TestPoller_ConnectedTransitions, фазы держатся сервером до сигнала
+// теста — ожидания идут по устойчивым состояниям, без ловли коротких окон.
+func TestPoller_FloodWhileOfflineMeansRecovery(t *testing.T) {
+	var flooding atomic.Bool // false: сервер отвечает 400; true: отвечает 429
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !flooding.Load() {
+			fmt.Fprint(w, `{"ok":false,"error_code":400,"description":"boom"}`)
+			return
+		}
+		fmt.Fprint(w, `{"ok":false,"error_code":429,"description":"Too Many Requests: retry after 1","parameters":{"retry_after":1}}`)
+	}))
+	defer srv.Close()
+
+	connected := new(atomic.Bool)
+	connected.Store(true)
+	p := newResilientPoller(testLogger(), connected)
+	p.backoff = backoff{min: time.Millisecond, max: 4 * time.Millisecond}
+	dest := make(chan tele.Update, 1)
+	stop := make(chan struct{})
+	done := startPoll(p, newOfflineTeleBot(t, srv.URL), dest, stop)
+
+	waitFor := func(want bool, msg string) {
+		t.Helper()
+		deadline := time.After(2 * time.Second)
+		for connected.Load() != want {
+			select {
+			case <-deadline:
+				t.Fatal(msg)
+			case <-time.After(2 * time.Millisecond):
+			}
+		}
+	}
+	waitFor(false, "оффлайн не переключил connected в false")
+	flooding.Store(true)
+	waitFor(true, "429 после оффлайна не восстановил connected")
+
+	close(stop)
+	waitDone(t, done, 2*time.Second, "Poll не завершился после close(stop)")
+}
+
 // 429: поллер уважает retry_after Telegram вместо своего backoff, и НЕ считает
 // флуд оффлайном — канал жив, /health не должен показывать "connecting".
 func TestPoller_FloodRespectsRetryAfter(t *testing.T) {
