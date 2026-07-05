@@ -61,7 +61,7 @@ function api(method, path, payload) {
 	let data;
 	try {
 		data = json(r.output);
-	} catch {
+	} catch (e) {
 		return { error: 'bad_json' };
 	}
 	return { ok: true, data };
@@ -93,9 +93,9 @@ const methods = {
 				bot: { running, pid: running ? int(split(pg.output, '\n')[0]) : null },
 				vpn: { installed: vpn_installed, up: vpn_up },
 				api: { up: api_up },
-				telegram, // "connected" | "connecting" | null (API недоступен)
+				telegram // "connected" | "connecting" | null (API недоступен)
 			};
-		},
+		}
 	},
 
 	// write: тумблер бота. В shell уходит элемент whitelist, не ввод.
@@ -107,7 +107,7 @@ const methods = {
 				return { error: 'bad_action' };
 			const r = run('/usr/bin/bot ' + action);
 			return { ok: r.code == 0, output: r.output };
-		},
+		}
 	},
 
 	// write: тумблер VPN (LAN-wide, скрипт из репо openwrt-vpn).
@@ -121,7 +121,7 @@ const methods = {
 				return { error: 'bad_action' };
 			const r = run('/usr/bin/vpn ' + action);
 			return { ok: r.code == 0, output: r.output };
-		},
+		}
 	},
 
 	// read: список устройств — прокси GET /api/v1/devices как есть.
@@ -129,7 +129,7 @@ const methods = {
 		call: function() {
 			const r = api('GET', '/api/v1/devices');
 			return r.ok ? r.data : { error: r.error };
-		},
+		}
 	},
 
 	// write: мутации без тела (ban/unban/vpnoff/vpnon/unlimit).
@@ -144,7 +144,7 @@ const methods = {
 				return { error: 'bad_mac' };
 			const r = api('POST', `/api/v1/devices/${mac}/${action}`, '');
 			return r.ok ? r.data : { error: r.error };
-		},
+		}
 	},
 
 	// write: установка лимита скорости, КБайт/с (не kbps!).
@@ -160,8 +160,8 @@ const methods = {
 			const r = api('POST', `/api/v1/devices/${mac}/limit`,
 				sprintf('%J', { kbytes_per_sec: kbps }));
 			return r.ok ? r.data : { error: r.error };
-		},
-	},
+		}
+	}
 };
 
 return { 'luci.openwrt-bot': methods };
