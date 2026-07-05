@@ -194,6 +194,13 @@ func (s *Server) writeError(w http.ResponseWriter, status int, msg string) {
 // internalError — error boundary (контракт telegram Log-middleware): клиенту
 // generic-сообщение без внутренностей exec/stderr, полная цепочка — в slog.
 func (s *Server) internalError(w http.ResponseWriter, r *http.Request, err error) {
+	// Отменённый ctx запроса — не сбой сервера: клиент оборвал соединение
+	// (панель перезагрузили) или идёт shutdown. Error-лог здесь — фантом,
+	// частые обновления панели вымыли бы кольцо logread; и 500 писать некому.
+	if r.Context().Err() != nil {
+		s.logger.Debug("http api: запрос оборван", "method", r.Method, "path", r.URL.Path, "err", err)
+		return
+	}
 	s.logger.Error("http api: запрос упал", "method", r.Method, "path", r.URL.Path, "err", err)
 	s.writeError(w, http.StatusInternalServerError, "внутренняя ошибка")
 }

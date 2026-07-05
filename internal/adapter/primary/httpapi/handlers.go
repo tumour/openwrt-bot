@@ -101,12 +101,10 @@ func (s *Server) macAction(exec func(ctx context.Context, mac domain.MAC) error)
 // {"kbytes_per_sec":N}, килобайта хватает с запасом.
 const maxLimitBodyBytes = 1 << 10
 
+// handleSetLimit — единственная мутация с телом: валидирует rate и делегирует
+// каркас (MAC, таймаут, error boundary, ответ) общему macAction — контракт
+// успеха мутаций живёт в одном месте на все семь маршрутов.
 func (s *Server) handleSetLimit(w http.ResponseWriter, r *http.Request) {
-	mac, ok := s.pathMAC(w, r)
-	if !ok {
-		return
-	}
-
 	var req struct {
 		KBytesPerSec int `json:"kbytes_per_sec"`
 	}
@@ -138,12 +136,8 @@ func (s *Server) handleSetLimit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
-	defer cancel()
-
-	if _, err := s.deps.SetLimit.Execute(ctx, device.SetLimitInput{MAC: mac, Rate: rate}); err != nil {
-		s.internalError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, okResponse{OK: true})
+	s.macAction(func(ctx context.Context, mac domain.MAC) error {
+		_, err := s.deps.SetLimit.Execute(ctx, device.SetLimitInput{MAC: mac, Rate: rate})
+		return err
+	})(w, r)
 }

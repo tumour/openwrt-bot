@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -213,6 +214,36 @@ func TestMutations_InvalidMAC(t *testing.T) {
 	}
 	if len(f.banned.added) != 0 {
 		t.Error("порт вызван при невалидном MAC")
+	}
+
+	// /limit с валидным телом, но битым MAC — тот же контракт (MAC проверяет
+	// делегированный macAction после валидации тела).
+	rec = do(f.server, http.MethodPost, "/api/v1/devices/not-a-mac/limit", strings.NewReader(`{"kbytes_per_sec":512}`))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("limit: status = %d, want 400", rec.Code)
+	}
+	if len(f.limits.set) != 0 {
+		t.Error("limit: порт вызван при невалидном MAC")
+	}
+}
+
+// Обрыв клиента (отменённый ctx запроса) — не сбой сервера: без Error-лога.
+func TestInternalError_ClientAbortIsNotAnError(t *testing.T) {
+	cause := errors.New("exec dhcp: context canceled")
+	deps := testDeps()
+	deps.List = device.NewList(&stubDhcp{err: cause}, &stubMACSet{}, &stubMACSet{}, &stubRateLimits{})
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	s := NewServer("127.0.0.1:0", logger, deps)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/devices", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel() // клиент ушёл до обработки
+	rec := httptest.NewRecorder()
+	s.srv.Handler.ServeHTTP(rec, req.WithContext(ctx))
+
+	if strings.Contains(logBuf.String(), "level=ERROR") {
+		t.Errorf("обрыв клиента попал в лог как ERROR:\n%s", logBuf.String())
 	}
 }
 
