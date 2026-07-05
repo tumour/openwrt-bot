@@ -41,7 +41,7 @@ func newResilientPoller(logger *slog.Logger, connected *atomic.Bool) *resilientP
 
 // Poll реализует tele.Poller: крутит getUpdates до закрытия stop.
 func (p *resilientPoller) Poll(b *tele.Bot, dest chan tele.Update, stop chan struct{}) {
-	offline := false
+	var offline, flooding bool // эпизоды: state-transition логи, не каждая итерация
 	for {
 		select {
 		case <-stop:
@@ -65,7 +65,9 @@ func (p *resilientPoller) Poll(b *tele.Bot, dest chan tele.Update, stop chan str
 			}
 
 			// 429 — канал жив (сервер ответил), Telegram лишь просит паузу:
-			// это не оффлайн, а если мы БЫЛИ в оффлайне — это восстановление.
+			// это не оффлайн, а если мы БЫЛИ в оффлайне — это восстановление,
+			// и сетевой backoff больше неактуален (иначе эскалированные 60s
+			// пережили бы восстановление и растянули следующий свежий обрыв).
 			var flood tele.FloodError
 			if errors.As(err, &flood) && flood.RetryAfter > 0 {
 				if offline {
@@ -73,8 +75,16 @@ func (p *resilientPoller) Poll(b *tele.Bot, dest chan tele.Update, stop chan str
 					p.logger.Info("telegram снова доступен")
 					offline = false
 				}
+				p.backoff.reset()
 				delay := time.Duration(flood.RetryAfter) * time.Second
-				p.logger.Info("telegram rate limit, жду", "retry_after", delay)
+				// Как и оффлайн: Info один раз на эпизод, повторы — Debug,
+				// иначе затяжной шторм 429 вымывает кольцо logread.
+				if !flooding {
+					p.logger.Info("telegram rate limit, жду", "retry_after", delay)
+					flooding = true
+				} else {
+					p.logger.Debug("telegram всё ещё rate limit", "retry_after", delay)
+				}
 				select {
 				case <-stop:
 					return
@@ -82,6 +92,7 @@ func (p *resilientPoller) Poll(b *tele.Bot, dest chan tele.Update, stop chan str
 				}
 				continue
 			}
+			flooding = false
 
 			delay := p.backoff.next()
 			// State-transition: Warn один раз при уходе в оффлайн, повторы —
@@ -106,6 +117,7 @@ func (p *resilientPoller) Poll(b *tele.Bot, dest chan tele.Update, stop chan str
 			p.logger.Info("telegram снова доступен")
 			offline = false
 		}
+		flooding = false
 		p.backoff.reset()
 
 		for _, u := range updates {

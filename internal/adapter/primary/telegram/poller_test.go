@@ -1,12 +1,14 @@
 package telegram
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -45,6 +47,21 @@ func waitDone(t *testing.T, done chan struct{}, d time.Duration, msg string) {
 	case <-done:
 	case <-time.After(d):
 		t.Fatal(msg)
+	}
+}
+
+// waitConnected ждёт устойчивого значения connected с дедлайном — общий хелпер
+// тестов state-transition (ожидания только по устойчивым состояниям, короткие
+// окна не ловим).
+func waitConnected(t *testing.T, connected *atomic.Bool, want bool, msg string) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for connected.Load() != want {
+		select {
+		case <-deadline:
+			t.Fatal(msg)
+		case <-time.After(2 * time.Millisecond):
+		}
 	}
 }
 
@@ -199,20 +216,9 @@ func TestPoller_ConnectedTransitions(t *testing.T) {
 	stop := make(chan struct{})
 	done := startPoll(p, newOfflineTeleBot(t, srv.URL), dest, stop)
 
-	waitFor := func(want bool, msg string) {
-		t.Helper()
-		deadline := time.After(2 * time.Second)
-		for connected.Load() != want {
-			select {
-			case <-deadline:
-				t.Fatal(msg)
-			case <-time.After(2 * time.Millisecond):
-			}
-		}
-	}
-	waitFor(false, "оффлайн не переключил connected в false")
+	waitConnected(t, connected, false, "оффлайн не переключил connected в false")
 	recovered.Store(true)
-	waitFor(true, "восстановление не вернуло connected в true")
+	waitConnected(t, connected, true, "восстановление не вернуло connected в true")
 
 	close(stop)
 	waitDone(t, done, 2*time.Second, "Poll не завершился после close(stop)")
@@ -241,23 +247,50 @@ func TestPoller_FloodWhileOfflineMeansRecovery(t *testing.T) {
 	stop := make(chan struct{})
 	done := startPoll(p, newOfflineTeleBot(t, srv.URL), dest, stop)
 
-	waitFor := func(want bool, msg string) {
-		t.Helper()
-		deadline := time.After(2 * time.Second)
-		for connected.Load() != want {
-			select {
-			case <-deadline:
-				t.Fatal(msg)
-			case <-time.After(2 * time.Millisecond):
-			}
-		}
-	}
-	waitFor(false, "оффлайн не переключил connected в false")
+	waitConnected(t, connected, false, "оффлайн не переключил connected в false")
 	flooding.Store(true)
-	waitFor(true, "429 после оффлайна не восстановил connected")
+	waitConnected(t, connected, true, "429 после оффлайна не восстановил connected")
 
 	close(stop)
 	waitDone(t, done, 2*time.Second, "Poll не завершился после close(stop)")
+	// Восстановление (пусть и через 429) обязано сбросить сетевой backoff —
+	// иначе эскалированные 60s растянут следующий свежий обрыв. После done
+	// читать backoff безопасно: горутина Poll завершилась.
+	if p.backoff.cur != 0 {
+		t.Errorf("backoff.cur = %v после восстановления через 429, want 0 (reset)", p.backoff.cur)
+	}
+}
+
+// Затяжной шторм 429: Info — один раз на эпизод, повторы — Debug (иначе при
+// retry_after=1 кольцо logread вымывается за часы).
+func TestPoller_FloodRepeatsLogOncePerEpisode(t *testing.T) {
+	var served atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		served.Add(1)
+		fmt.Fprint(w, `{"ok":false,"error_code":429,"description":"Too Many Requests: retry after 1","parameters":{"retry_after":1}}`)
+	}))
+	defer srv.Close()
+
+	var logBuf bytes.Buffer // читается только после завершения Poll
+	p := newResilientPoller(slog.New(slog.NewTextHandler(&logBuf, nil)), new(atomic.Bool))
+	dest := make(chan tele.Update, 1)
+	stop := make(chan struct{})
+	done := startPoll(p, newOfflineTeleBot(t, srv.URL), dest, stop)
+
+	deadline := time.After(5 * time.Second)
+	for served.Load() < 3 { // три 429 подряд = два повтора эпизода
+		select {
+		case <-deadline:
+			t.Fatalf("сервер получил %d запросов, ждали ≥3", served.Load())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	close(stop)
+	waitDone(t, done, 2*time.Second, "Poll не завершился после close(stop)")
+
+	if n := strings.Count(logBuf.String(), "rate limit, жду"); n != 1 {
+		t.Errorf("Info «rate limit, жду» встретился %d раз, want 1 (повторы — Debug)", n)
+	}
 }
 
 // 429: поллер уважает retry_after Telegram вместо своего backoff, и НЕ считает
