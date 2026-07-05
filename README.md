@@ -49,6 +49,7 @@ nftables, ubus) — снаружи, подключается через инте
 | `internal/adapter/primary/httpapi/` | Driving adapter №2: локальный HTTP API для LuCI-панели — **те же use cases**, другой вход. Primary-адаптеры друг о друге не знают. |
 | `internal/adapter/secondary/{nftables,ubus,system}/` | Driven adapters: реализации портов через exec. |
 | `internal/platform/` | Cross-cutting infrastructure: config, logger, graceful shutdown. |
+| `luci-app-openwrt-bot/` | LuCI-панель (rpcd ucode-плагин + JS-вьюха). Раскладка LuCI-feed (`htdocs/`+`root/`) — выносится в отдельный пакет без перекладывания файлов. Клиент HTTP API, Go-код о ней не знает. |
 
 ### Почему `app/` структурирован по фичам, а не плоский
 

@@ -20,7 +20,7 @@ make run           # build + запуск локально (нужен env с BO
 
 Один тест: `go test -race -run 'TestBan_Execute' ./internal/app/device/`
 
-Деплой: `make deploy TARGET=<имя>` — таргет это файл `deploy/env/<имя>.env` (gitignored, содержит секреты; ssh-хост в шапке `# DEPLOY_SSH_HOST=...`). Скрипт `deploy/deploy.sh` роутеро-агностичен и идемпотентен: сверяет артефакты через `cmp`, перезапускает бота только при реальных изменениях. Деплой трогает живой роутер — не запускать без явной просьбы пользователя.
+Деплой: `make deploy TARGET=<имя>` — таргет это файл `deploy/env/<имя>.env` (gitignored, содержит секреты; ssh-хост в шапке `# DEPLOY_SSH_HOST=...`). Скрипт `deploy/deploy.sh` роутеро-агностичен и идемпотентен: сверяет артефакты через `cmp` (хелпер `sync_file`), перезапускает бота только при реальных изменениях; файлы LuCI-панели триггерят не рестарт бота, а `rpcd reload` + сброс `/tmp/luci-indexcache.*.json` + smoke-check `ubus call luci.openwrt-bot status`. Деплой трогает живой роутер — не запускать без явной просьбы пользователя.
 
 ## Архитектура
 
@@ -31,6 +31,7 @@ Hexagonal / Ports & Adapters. Подробности и пошаговый ре�
 - `internal/app/<фича>/` — только domain + stdlib. Вертикальные слайсы по фичам (`device/`, `status/`, `network/`), у каждой свой `ports.go` — интерфейсы объявляются рядом с потребителем, не в adapter.
 - `internal/adapter/primary/telegram/` — driving: middleware (auth-whitelist, log, base-context) → handler → use case → presenter.
 - `internal/adapter/primary/httpapi/` — driving №2: локальный HTTP API для LuCI-панели поверх тех же use cases. Primary-адаптеры друг о друге не знают — единственная связь (`TelegramUp: bot.Connected`) живёт в composition root.
+- `luci-app-openwrt-bot/` — LuCI-панель (раскладка LuCI-feed: `htdocs/` + `root/`): rpcd ucode-плагин `luci.openwrt-bot` (тумблеры через exec + прокси в HTTP API через `uclient-fetch --no-proxy`; НЕ ucode-uclient — вложенный uloop в процессе rpcd опасен), ACL, меню, JS-вьюха. Контракт — `luci-app-openwrt-bot/API.md`. Go-код панель не знает.
 - `internal/adapter/secondary/{nftables,ubus,dhcp,thermal,librespeed,system}/` — driven: реализации портов через exec/чтение файлов.
 - `internal/platform/` — config (caarlos0/env), logger (slog), graceful shutdown.
 - `cmd/bot/main.go` — единственный composition root (паттерн `main → run() error`). Никто больше не создаёт свои зависимости сам.
