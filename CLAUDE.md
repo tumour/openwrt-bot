@@ -28,12 +28,12 @@ Hexagonal / Ports & Adapters. Подробности и пошаговый ре�
 
 **Dependency rule проверяется машинно** тестом `internal/archtest/arch_test.go`:
 - `internal/domain/` — только stdlib. Value objects (`MAC` с валидацией в конструкторе), entities, типизированные ошибки (`var ErrXxx`, проверка через `errors.Is`).
-- `internal/app/<фича>/` — только domain + stdlib. Вертикальные слайсы по фичам (`device/`, `status/`, `network/`), у каждой свой `ports.go` — интерфейсы объявляются рядом с потребителем, не в adapter.
+- `internal/app/<фича>/` — только domain + stdlib. Вертикальные слайсы по фичам (`device/`, `status/`, `network/`, `timer/`), у каждой свой `ports.go` — интерфейсы объявляются рядом с потребителем, не в adapter.
 - `internal/adapter/primary/telegram/` — driving: middleware (auth-whitelist, log, base-context) → handler → use case → presenter.
 - `internal/adapter/primary/httpapi/` — driving №2: локальный HTTP API для LuCI-панели поверх тех же use cases. Primary-адаптеры друг о друге не знают — единственная связь (`TelegramUp: bot.Connected`) живёт в composition root.
 - `luci-app-openwrt-bot/` — LuCI-панель (раскладка LuCI-feed: `htdocs/` + `root/`): rpcd ucode-плагин `luci.openwrt-bot` (тумблеры через exec + прокси в HTTP API через `uclient-fetch --no-proxy`; НЕ ucode-uclient — вложенный uloop в процессе rpcd опасен), ACL, меню, JS-вьюха. Контракт — `luci-app-openwrt-bot/API.md`. Go-код панель не знает.
-- `internal/adapter/secondary/{nftables,ubus,dhcp,thermal,librespeed,system}/` — driven: реализации портов через exec/чтение файлов.
-- `internal/platform/` — config (caarlos0/env), logger (slog), graceful shutdown.
+- `internal/adapter/secondary/{nftables,ubus,dhcp,thermal,librespeed,system,schedule}/` — driven: реализации портов через exec/чтение файлов; `schedule` — обёртка таймерного движка под порт `timer.SchedulerPort` (трансляция generic↔domain типов и ошибок).
+- `internal/platform/` — config (caarlos0/env), logger (slog), graceful shutdown, `scheduler` (обобщённый таймерный движок `Scheduler[J]` — domain-agnostic, как rungroup).
 - `cmd/bot/main.go` — единственный composition root (паттерн `main → run() error`). Никто больше не создаёт свои зависимости сам.
 
 Граница domain ↔ app: в domain — инварианты, верные вне приложения («broadcast-MAC нельзя банить»); в app — orchestration портов и application rules («повторный бан = no-op»).
