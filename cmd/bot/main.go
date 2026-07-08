@@ -12,15 +12,19 @@ import (
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/dhcp"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/librespeed"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/nftables"
+	"github.com/tumour/openwrt-bot/internal/adapter/secondary/schedule"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/system"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/thermal"
 	"github.com/tumour/openwrt-bot/internal/adapter/secondary/ubus"
 	"github.com/tumour/openwrt-bot/internal/app/device"
 	"github.com/tumour/openwrt-bot/internal/app/network"
 	"github.com/tumour/openwrt-bot/internal/app/status"
+	"github.com/tumour/openwrt-bot/internal/app/timer"
+	"github.com/tumour/openwrt-bot/internal/domain"
 	"github.com/tumour/openwrt-bot/internal/platform/config"
 	"github.com/tumour/openwrt-bot/internal/platform/logger"
 	"github.com/tumour/openwrt-bot/internal/platform/rungroup"
+	"github.com/tumour/openwrt-bot/internal/platform/scheduler"
 	"github.com/tumour/openwrt-bot/internal/platform/shutdown"
 )
 
@@ -64,6 +68,7 @@ func run() error {
 	nftLimits := nftables.NewRateLimiter(runner, "netdev openwrt_bot")
 	dhcpClient := dhcp.NewClient(fileReader, cfg.DhcpLeasesPath)
 	speedClient := librespeed.NewClient(runner, cfg.SpeedTestServerID)
+	sysClock := system.NewClock()
 
 	// 5. Use cases (выше). Каждый получает порты через конструктор.
 	getStatusUC := status.NewGetStatus(ubusClient, thermalClient)
@@ -76,6 +81,20 @@ func run() error {
 	setLimitUC := device.NewSetLimit(nftLimits)
 	removeLimitUC := device.NewRemoveLimit(nftLimits)
 
+	// Планировщик отложенных задач. Обобщённый движок (тип задачи — domain.DeviceJob)
+	// на системных часах; deviceRunner переводит действие в вызов use case device.*
+	// при срабатывании — правило «повтор = no-op» переиспользуется, рассинхрона с
+	// кнопками нет. Таймеры живут в памяти процесса (теряются при рестарте).
+	// schedule.Adapter подгоняет движок под порт timer.SchedulerPort (app по
+	// dependency rule не видит platform).
+	deviceTimers := scheduler.New[domain.DeviceJob](sysClock, deviceRunner{
+		ban: banUC, unban: unbanUC, vpnOff: vpnOffUC, vpnOn: vpnOnUC, log: log,
+	})
+	timerPort := schedule.NewAdapter(deviceTimers)
+	scheduleTimerUC := timer.NewSchedule(timerPort)
+	listTimersUC := timer.NewList(timerPort)
+	cancelTimerUC := timer.NewCancel(timerPort)
+
 	// 6. Handlers (Primary). Принимают use cases.
 	handlers := telegram.Handlers{
 		Status:    handler.NewStatus(getStatusUC),
@@ -87,6 +106,7 @@ func run() error {
 		VPNOn:     handler.NewVPNOn(vpnOnUC),
 		Limit:     handler.NewLimit(setLimitUC),
 		Unlimit:   handler.NewUnlimit(removeLimitUC),
+		Timers:    handler.NewTimers(scheduleTimerUC, listTimersUC, cancelTimerUC, listUC),
 	}
 
 	// 7. Bot. Собирается из cfg, logger, handlers — больше ничего не нужно.
@@ -101,27 +121,29 @@ func run() error {
 
 	log.Info("openwrt-bot started", "allowed_users", len(cfg.AllowedUserIDs), "http_api", cfg.HTTPAddr != "")
 
-	// HTTP API выключен — ровно прежнее поведение: один блокирующий Run.
-	if cfg.HTTPAddr == "" {
-		return bot.Run(ctx)
-	}
-
-	// 8. HTTP API — второй primary adapter поверх ТЕХ ЖЕ экземпляров use cases.
-	// TelegramUp — единственная связь primary↔primary, и живёт она только здесь.
-	api := httpapi.NewServer(cfg.HTTPAddr, log, httpapi.Deps{
-		List:        listUC,
-		Ban:         banUC,
-		Unban:       unbanUC,
-		VPNOff:      vpnOffUC,
-		VPNOn:       vpnOnUC,
-		SetLimit:    setLimitUC,
-		RemoveLimit: removeLimitUC,
-		TelegramUp:  bot.Connected,
-	})
-
-	// 9. Общая судьба: ошибка одного адаптера гасит второго, SIGTERM гасит обоих.
+	// 8. Общая судьба: ошибка одного компонента гасит остальных, SIGTERM гасит
+	// всех. Бот и планировщик крутятся всегда (таймеры — часть бота); HTTP API —
+	// только если задан адрес. Раньше при выключенном API был один блокирующий
+	// Run, теперь долгоживущих компонентов минимум два, поэтому rungroup всегда.
 	g, gctx := rungroup.New(ctx)
 	g.Go(func() error { return bot.Run(gctx) })
-	g.Go(func() error { return api.Run(gctx) })
+	g.Go(func() error { return deviceTimers.Run(gctx) })
+
+	if cfg.HTTPAddr != "" {
+		// HTTP API — второй primary adapter поверх ТЕХ ЖЕ экземпляров use cases.
+		// TelegramUp — единственная связь primary↔primary, и живёт она только здесь.
+		api := httpapi.NewServer(cfg.HTTPAddr, log, httpapi.Deps{
+			List:        listUC,
+			Ban:         banUC,
+			Unban:       unbanUC,
+			VPNOff:      vpnOffUC,
+			VPNOn:       vpnOnUC,
+			SetLimit:    setLimitUC,
+			RemoveLimit: removeLimitUC,
+			TelegramUp:  bot.Connected,
+		})
+		g.Go(func() error { return api.Run(gctx) })
+	}
+
 	return g.Wait()
 }

@@ -18,6 +18,7 @@ type Handlers struct {
 	VPNOn     *handler.VPNOn
 	Limit     *handler.Limit
 	Unlimit   *handler.Unlimit
+	Timers    *handler.Timers // /timers + флоу отложенных задач + /timer
 }
 
 // command — описание одной команды в ОДНОМ месте: и маршрут (handler), и пункт
@@ -42,12 +43,14 @@ func commands(h Handlers) []command {
 		{"list", "Устройства в сети: бан и VPN по кнопкам", h.Devices.HandleList, true},
 		{"status", "Статус роутера: uptime, нагрузка, память, температура", h.Status.Handle, true},
 		{"speedtest", "Замер скорости интернет-канала", h.SpeedTest.Handle, true},
+		{"timers", "Отложенные таймеры: бан/VPN по расписанию", h.Timers.HandleRoot, true},
 		{"ban", "Забанить устройство: /ban AA:BB:CC:DD:EE:FF", h.Ban.Handle, false},
 		{"unban", "Разбанить устройство: /unban AA:BB:CC:DD:EE:FF", h.Unban.Handle, false},
 		{"vpnoff", "Пустить устройство мимо VPN: /vpnoff AA:BB:CC:DD:EE:FF", h.VPNOff.Handle, false},
 		{"vpnon", "Вернуть устройство в VPN: /vpnon AA:BB:CC:DD:EE:FF", h.VPNOn.Handle, false},
 		{"limit", "Ограничить скорость: /limit AA:BB:CC:DD:EE:FF 512 (КБ/с)", h.Limit.Handle, false},
 		{"unlimit", "Снять лимит скорости: /unlimit AA:BB:CC:DD:EE:FF", h.Unlimit.Handle, false},
+		{"timer", "Таймер вручную: /timer AA:BB:CC:DD:EE:FF ban 45 (ban|unban|vpnoff|vpnon, минуты)", h.Timers.HandleSchedule, false},
 		{"start", "Привет + клавиатура управления", startHandler(h), false},
 	}
 }
@@ -59,6 +62,7 @@ var (
 	btnDevices   = tele.Btn{Text: "📱 Устройства"}
 	btnStatus    = tele.Btn{Text: "📊 Статус"}
 	btnSpeedTest = tele.Btn{Text: "🚀 Спидтест"}
+	btnTimers    = tele.Btn{Text: "⏰ Таймеры"}
 )
 
 // mainKeyboard — постоянная клавиатура управления. ResizeKeyboard — компактные
@@ -68,6 +72,7 @@ func mainKeyboard() *tele.ReplyMarkup {
 	m.Reply(
 		m.Row(btnDevices),
 		m.Row(btnStatus, btnSpeedTest),
+		m.Row(btnTimers),
 	)
 	return m
 }
@@ -77,7 +82,8 @@ func startHandler(h Handlers) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		return c.Send(
 			"Роутер на связи 🛜\n\n"+
-				"Управление — кнопками внизу. Бан и VPN per-device — в карточках устройств (📱 Устройства).",
+				"Управление — кнопками внизу. Бан и VPN per-device — в карточках устройств (📱 Устройства), "+
+				"отложенные по времени — в ⏰ Таймеры.",
 			mainKeyboard())
 	}
 }
@@ -91,7 +97,9 @@ func registerRoutes(bot *tele.Bot, h Handlers) {
 	bot.Handle(&btnDevices, h.Devices.HandleList)
 	bot.Handle(&btnStatus, h.Status.Handle)
 	bot.Handle(&btnSpeedTest, h.SpeedTest.Handle)
+	bot.Handle(&btnTimers, h.Timers.HandleRoot)
 	h.Devices.RegisterCallbacks(bot)
+	h.Timers.RegisterCallbacks(bot)
 }
 
 // menuCommands — пункты для нативного меню Telegram (кнопка ≡ + автодополнение).

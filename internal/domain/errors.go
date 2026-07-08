@@ -13,4 +13,13 @@ var (
 	// придаёт use case, а не ошибка.
 	ErrAlreadyInSet = errors.New("mac already in set")
 	ErrNotInSet     = errors.New("mac is not in set")
+	// ErrInvalidAction/ErrInvalidMinutes — валидация входных данных таймера
+	// (действие и задержка) на границе: битый payload кнопки или аргумент /timer.
+	ErrInvalidAction  = errors.New("invalid action")
+	ErrInvalidMinutes = errors.New("invalid delay in minutes")
+	// ErrTaskNotFound — отмена несуществующего таймера. Штатно: кнопка отмены из
+	// сообщения, пережившего сам таймер (сработал/отменён/рестарт бота). Адаптер
+	// планировщика транслирует сюда инфраструктурную ошибку движка — как nftables
+	// транслирует stderr в ErrNotInSet.
+	ErrTaskNotFound = errors.New("scheduled task not found")
 )

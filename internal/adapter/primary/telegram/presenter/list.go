@@ -25,6 +25,10 @@ func DeviceLabel(v device.View) string {
 	return fmt.Sprintf("%s %s · %s", deviceIcon(v), hostOrDefault(v), ipOrDash(v))
 }
 
+// DeviceName — короткое имя устройства (hostname или «без имени»), без IP и
+// иконки: для строк таймеров и заголовков, где нужен лаконичный ярлык.
+func DeviceName(v device.View) string { return hostOrDefault(v) }
+
 // DeviceCard — карточка устройства (HTML): полные данные + статусы.
 // MAC — <code>-спан, тап по нему копирует. Rate — value object (только цифры),
 // не экранируем, как и MAC.
