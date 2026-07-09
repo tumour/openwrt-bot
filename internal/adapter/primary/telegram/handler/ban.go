@@ -22,20 +22,20 @@ func NewBan(uc *device.Ban) *Ban { return &Ban{uc: uc} }
 func (h *Ban) Handle(c tele.Context) error {
 	args := c.Args()
 	if len(args) == 0 {
-		return c.Send("использование: <code>/ban aa:bb:cc:dd:ee:ff</code>", tele.ModeHTML)
+		return answer(c, "использование: <code>/ban aa:bb:cc:dd:ee:ff</code>", tele.ModeHTML)
 	}
 
 	mac, err := domain.NewMAC(args[0])
 	if err != nil {
-		return c.Send("⚠ невалидный MAC: " + args[0])
+		return answer(c, "⚠ невалидный MAC: "+args[0])
 	}
 
 	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
 	defer cancel()
 
 	if _, err := h.uc.Execute(ctx, device.BanInput{MAC: mac}); err != nil {
-		_ = c.Send("⚠ не удалось забанить устройство")
+		_ = answer(c, "⚠ не удалось забанить устройство")
 		return fmt.Errorf("/ban: %w", err)
 	}
-	return c.Send(presenter.Banned(mac), tele.ModeHTML)
+	return answer(c, presenter.Banned(mac), tele.ModeHTML)
 }

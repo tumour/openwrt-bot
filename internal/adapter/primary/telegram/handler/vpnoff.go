@@ -22,20 +22,20 @@ func NewVPNOff(uc *device.DisableVPN) *VPNOff { return &VPNOff{uc: uc} }
 func (h *VPNOff) Handle(c tele.Context) error {
 	args := c.Args()
 	if len(args) == 0 {
-		return c.Send("использование: <code>/vpnoff aa:bb:cc:dd:ee:ff</code>", tele.ModeHTML)
+		return answer(c, "использование: <code>/vpnoff aa:bb:cc:dd:ee:ff</code>", tele.ModeHTML)
 	}
 
 	mac, err := domain.NewMAC(args[0])
 	if err != nil {
-		return c.Send("⚠ невалидный MAC: " + args[0])
+		return answer(c, "⚠ невалидный MAC: "+args[0])
 	}
 
 	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
 	defer cancel()
 
 	if _, err := h.uc.Execute(ctx, device.DisableVPNInput{MAC: mac}); err != nil {
-		_ = c.Send("⚠ не удалось вывести устройство из VPN")
+		_ = answer(c, "⚠ не удалось вывести устройство из VPN")
 		return fmt.Errorf("/vpnoff: %w", err)
 	}
-	return c.Send(presenter.VPNOff(mac), tele.ModeHTML)
+	return answer(c, presenter.VPNOff(mac), tele.ModeHTML)
 }

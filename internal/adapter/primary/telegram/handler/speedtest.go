@@ -29,7 +29,9 @@ func NewSpeedTest(uc *network.RunSpeedTest) *SpeedTest {
 const speedtestTimeout = 90 * time.Second
 
 func (h *SpeedTest) Handle(c tele.Context) error {
-	msg, err := c.Bot().Send(c.Recipient(), "⏳ Замеряю скорость канала, ~30–60 с…")
+	// Interim-сообщение несёт постоянную клавиатуру (см. answer): Edit результата
+	// reply-markup менять не умеет, поэтому прикрепляем на этапе Send.
+	msg, err := c.Bot().Send(c.Recipient(), "⏳ Замеряю скорость канала, ~30–60 с…", MainKeyboard())
 	if err != nil {
 		return err
 	}

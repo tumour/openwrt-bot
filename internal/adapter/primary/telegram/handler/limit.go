@@ -23,28 +23,28 @@ func NewLimit(uc *device.SetLimit) *Limit { return &Limit{uc: uc} }
 func (h *Limit) Handle(c tele.Context) error {
 	args := c.Args()
 	if len(args) < 2 {
-		return c.Send("использование: <code>/limit aa:bb:cc:dd:ee:ff 512</code> — КБ/с на каждое направление", tele.ModeHTML)
+		return answer(c, "использование: <code>/limit aa:bb:cc:dd:ee:ff 512</code> — КБ/с на каждое направление", tele.ModeHTML)
 	}
 
 	mac, err := domain.NewMAC(args[0])
 	if err != nil {
-		return c.Send("⚠ невалидный MAC: " + args[0])
+		return answer(c, "⚠ невалидный MAC: "+args[0])
 	}
 	n, err := strconv.Atoi(args[1])
 	if err != nil {
-		return c.Send("⚠ невалидный лимит (целое, КБ/с): " + args[1])
+		return answer(c, "⚠ невалидный лимит (целое, КБ/с): "+args[1])
 	}
 	rate, err := domain.NewRate(n)
 	if err != nil {
-		return c.Send("⚠ невалидный лимит (1..1000000 КБ/с): " + args[1])
+		return answer(c, "⚠ невалидный лимит (1..1000000 КБ/с): "+args[1])
 	}
 
 	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
 	defer cancel()
 
 	if _, err := h.uc.Execute(ctx, device.SetLimitInput{MAC: mac, Rate: rate}); err != nil {
-		_ = c.Send("⚠ не удалось ограничить скорость")
+		_ = answer(c, "⚠ не удалось ограничить скорость")
 		return fmt.Errorf("/limit: %w", err)
 	}
-	return c.Send(presenter.Limited(mac, rate), tele.ModeHTML)
+	return answer(c, presenter.Limited(mac, rate), tele.ModeHTML)
 }

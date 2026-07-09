@@ -55,36 +55,21 @@ func commands(h Handlers) []command {
 	}
 }
 
-// Кнопки постоянной reply-клавиатуры (живёт под полем ввода, видна всегда —
-// в отличие от нативного меню, зарытого в «≡»). Текст кнопки = endpoint:
-// telebot матчит входящее сообщение по точному тексту.
-var (
-	btnDevices   = tele.Btn{Text: "📱 Устройства"}
-	btnStatus    = tele.Btn{Text: "📊 Статус"}
-	btnSpeedTest = tele.Btn{Text: "🚀 Спидтест"}
-	btnTimers    = tele.Btn{Text: "⏰ Таймеры"}
-)
+// Постоянная reply-клавиатура (живёт под полем ввода, видна всегда — в отличие
+// от нативного меню, зарытого в «≡») определена в handler (keyboard.go):
+// хендлеры прикрепляют её к текстовым ответам, router только вешает маршруты.
 
-// mainKeyboard — постоянная клавиатура управления. ResizeKeyboard — компактные
-// кнопки по высоте текста, OneTimeKeyboard НЕ ставим: клавиатура должна жить.
-func mainKeyboard() *tele.ReplyMarkup {
-	m := &tele.ReplyMarkup{ResizeKeyboard: true}
-	m.Reply(
-		m.Row(btnDevices),
-		m.Row(btnStatus, btnSpeedTest),
-		m.Row(btnTimers),
-	)
-	return m
-}
+// greeting — приветствие с ориентировкой по кнопкам. Единый текст для /start
+// и анонса после рестарта (bot.announceKeyboard): юзер видит одно и то же
+// сообщение в обоих случаях, тексты не разъезжаются.
+const greeting = "Роутер на связи 🛜\n\n" +
+	"Управление — кнопками внизу. Бан и VPN per-device — в карточках устройств (📱 Устройства), " +
+	"отложенные по времени — в ⏰ Таймеры."
 
 // startHandler — /start: приветствие + установка постоянной клавиатуры.
 func startHandler(h Handlers) tele.HandlerFunc {
 	return func(c tele.Context) error {
-		return c.Send(
-			"Роутер на связи 🛜\n\n"+
-				"Управление — кнопками внизу. Бан и VPN per-device — в карточках устройств (📱 Устройства), "+
-				"отложенные по времени — в ⏰ Таймеры.",
-			mainKeyboard())
+		return c.Send(greeting, handler.MainKeyboard())
 	}
 }
 
@@ -94,10 +79,10 @@ func registerRoutes(bot *tele.Bot, h Handlers) {
 	for _, c := range commands(h) {
 		bot.Handle("/"+c.name, c.handle)
 	}
-	bot.Handle(&btnDevices, h.Devices.HandleList)
-	bot.Handle(&btnStatus, h.Status.Handle)
-	bot.Handle(&btnSpeedTest, h.SpeedTest.Handle)
-	bot.Handle(&btnTimers, h.Timers.HandleRoot)
+	bot.Handle(&handler.BtnDevices, h.Devices.HandleList)
+	bot.Handle(&handler.BtnStatus, h.Status.Handle)
+	bot.Handle(&handler.BtnSpeedTest, h.SpeedTest.Handle)
+	bot.Handle(&handler.BtnTimers, h.Timers.HandleRoot)
 	h.Devices.RegisterCallbacks(bot)
 	h.Timers.RegisterCallbacks(bot)
 }

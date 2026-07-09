@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/handler"
 	"github.com/tumour/openwrt-bot/internal/adapter/primary/telegram/middleware"
 	tele "gopkg.in/telebot.v3"
 )
@@ -30,6 +31,10 @@ type Bot struct {
 	// menu — предвычисленные пункты меню: SetCommands сетевой, поэтому уезжает
 	// из конструктора в post-connect фазу Run.
 	menu []tele.Command
+	// announceTo — кому слать анонс с клавиатурой после старта (whitelist).
+	// Reply-клавиатура — приложение к сообщению, молча обновить её Telegram не
+	// умеет: после деплоя новая раскладка приезжает этим сообщением, без /start.
+	announceTo []int64
 	// connectBackoff — ритм дозвона до Telegram; поле, а не локальная переменная,
 	// чтобы тесты инжектили малые значения.
 	connectBackoff backoff
@@ -57,6 +62,7 @@ func NewBot(cfg Config, logger *slog.Logger, h Handlers) (*Bot, error) {
 	b := &Bot{
 		logger:         logger,
 		menu:           menuCommands(h),
+		announceTo:     cfg.AllowedUserIDs,
 		connectBackoff: newBackoff(),
 	}
 	tb, err := tele.NewBot(tele.Settings{
@@ -119,6 +125,10 @@ func (b *Bot) Run(ctx context.Context) error {
 	if err := b.bot.SetCommands(b.menu); err != nil {
 		b.logger.Warn("не удалось установить меню команд Telegram", "err", err)
 	}
+	// Фаза 2.5: анонс с клавиатурой. Ровно раз на старт процесса (реконнекты
+	// поллера сюда не возвращаются) — рестарт бота сам приносит юзерам свежую
+	// раскладку кнопок.
+	b.announceKeyboard()
 
 	// Фаза 3: поллинг.
 	done := make(chan struct{})
@@ -217,6 +227,18 @@ func (b *Bot) probeGetMe(ctx context.Context) (*tele.User, error) {
 		return nil, ctx.Err()
 	case r := <-ch:
 		return r.user, r.err
+	}
+}
+
+// announceKeyboard шлёт каждому из whitelist приветствие (то же, что /start) с
+// постоянной клавиатурой. Best-effort: ошибка по одному адресату (юзер не
+// начинал чат, заблокировал бота) логируется и не мешает остальным — как
+// SetCommands, анонс не стоит жизни процесса.
+func (b *Bot) announceKeyboard() {
+	for _, id := range b.announceTo {
+		if _, err := b.bot.Send(&tele.User{ID: id}, greeting, handler.MainKeyboard()); err != nil {
+			b.logger.Warn("анонс клавиатуры не доставлен", "user_id", id, "err", err)
+		}
 	}
 }
 

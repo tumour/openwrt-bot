@@ -22,20 +22,20 @@ func NewUnlimit(uc *device.RemoveLimit) *Unlimit { return &Unlimit{uc: uc} }
 func (h *Unlimit) Handle(c tele.Context) error {
 	args := c.Args()
 	if len(args) == 0 {
-		return c.Send("использование: <code>/unlimit aa:bb:cc:dd:ee:ff</code>", tele.ModeHTML)
+		return answer(c, "использование: <code>/unlimit aa:bb:cc:dd:ee:ff</code>", tele.ModeHTML)
 	}
 
 	mac, err := domain.NewMAC(args[0])
 	if err != nil {
-		return c.Send("⚠ невалидный MAC: " + args[0])
+		return answer(c, "⚠ невалидный MAC: "+args[0])
 	}
 
 	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
 	defer cancel()
 
 	if _, err := h.uc.Execute(ctx, device.RemoveLimitInput{MAC: mac}); err != nil {
-		_ = c.Send("⚠ не удалось снять лимит скорости")
+		_ = answer(c, "⚠ не удалось снять лимит скорости")
 		return fmt.Errorf("/unlimit: %w", err)
 	}
-	return c.Send(presenter.Unlimited(mac), tele.ModeHTML)
+	return answer(c, presenter.Unlimited(mac), tele.ModeHTML)
 }

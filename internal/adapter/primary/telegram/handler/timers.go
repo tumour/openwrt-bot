@@ -63,7 +63,7 @@ func (h *Timers) HandleRoot(c tele.Context) error {
 
 	text, markup, err := h.renderRoot(ctx)
 	if err != nil {
-		_ = c.Send("⚠ не удалось открыть таймеры")
+		_ = answer(c, "⚠ не удалось открыть таймеры")
 		return fmt.Errorf("/timers: %w", err)
 	}
 	return c.Send(text, markup, tele.ModeHTML)
@@ -162,33 +162,33 @@ func (h *Timers) handleCancel(c tele.Context) error {
 func (h *Timers) HandleSchedule(c tele.Context) error {
 	args := c.Args()
 	if len(args) < 3 {
-		return c.Send("использование: <code>/timer aa:bb:cc:dd:ee:ff ban 45</code>\n"+
+		return answer(c, "использование: <code>/timer aa:bb:cc:dd:ee:ff ban 45</code>\n"+
 			"действия: <code>ban unban vpnoff vpnon</code>, минуты 1..1440", tele.ModeHTML)
 	}
 	mac, err := domain.NewMAC(args[0])
 	if err != nil {
-		return c.Send("⚠ невалидный MAC: " + args[0])
+		return answer(c, "⚠ невалидный MAC: "+args[0])
 	}
 	action, err := domain.ParseAction(args[1])
 	if err != nil {
-		return c.Send("⚠ неизвестное действие: " + args[1] + " (ban|unban|vpnoff|vpnon)")
+		return answer(c, "⚠ неизвестное действие: "+args[1]+" (ban|unban|vpnoff|vpnon)")
 	}
 	n, err := strconv.Atoi(args[2])
 	if err != nil {
-		return c.Send("⚠ невалидные минуты (целое): " + args[2])
+		return answer(c, "⚠ невалидные минуты (целое): "+args[2])
 	}
 	mins, err := domain.NewMinutes(n)
 	if err != nil {
-		return c.Send("⚠ невалидные минуты (1..1440): " + args[2])
+		return answer(c, "⚠ невалидные минуты (1..1440): "+args[2])
 	}
 
 	ctx, cancel := context.WithTimeout(middleware.BaseContext(c), handlerTimeout)
 	defer cancel()
 	if _, err := h.schedule.Execute(ctx, timer.ScheduleInput{MAC: mac, Action: action, Delay: mins}); err != nil {
-		_ = c.Send("⚠ не удалось поставить таймер")
+		_ = answer(c, "⚠ не удалось поставить таймер")
 		return fmt.Errorf("/timer: %w", err)
 	}
-	return c.Send(presenter.Scheduled(mac, action, mins), tele.ModeHTML)
+	return answer(c, presenter.Scheduled(mac, action, mins), tele.ModeHTML)
 }
 
 // respondAndRefreshRoot — финал действия (постановка/отмена): перерисовать

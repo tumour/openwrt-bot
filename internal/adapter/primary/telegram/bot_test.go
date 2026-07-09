@@ -2,9 +2,11 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -150,6 +152,93 @@ func TestRun_CancelBeforeConnected(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Run завис: похоже, Stop() позвали без запущенного Start()")
+	}
+}
+
+// Анонс при старте: после connect бот шлёт каждому из whitelist сообщение с
+// постоянной клавиатурой — свежая раскладка приезжает сама, без ручного /start
+// после деплоя. Ошибка отправки одному юзеру не мешает остальным.
+func TestRun_AnnouncesKeyboardToWhitelist(t *testing.T) {
+	var mu sync.Mutex
+	var gotChats []string
+	var gotMarkup []bool
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/bottest/getMe":
+			fmt.Fprint(w, getMeOK)
+		case "/bottest/setMyCommands":
+			fmt.Fprint(w, `{"ok":true,"result":true}`)
+		case "/bottest/sendMessage":
+			// telebot шлёт параметры JSON-телом; reply_markup внутри — строка с JSON.
+			var params struct {
+				ChatID      string `json:"chat_id"`
+				ReplyMarkup string `json:"reply_markup"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&params)
+			var markup struct {
+				Keyboard [][]struct{ Text string } `json:"keyboard"`
+			}
+			hasKeyboard := json.Unmarshal([]byte(params.ReplyMarkup), &markup) == nil &&
+				len(markup.Keyboard) > 0
+			mu.Lock()
+			gotChats = append(gotChats, params.ChatID)
+			gotMarkup = append(gotMarkup, hasKeyboard)
+			mu.Unlock()
+			// Первому юзеру — ошибка (не начинал чат): не должна помешать второму.
+			if params.ChatID == "42" {
+				fmt.Fprint(w, `{"ok":false,"error_code":403,"description":"Forbidden: bot was blocked"}`)
+				return
+			}
+			fmt.Fprint(w, `{"ok":true,"result":{"message_id":1,"chat":{"id":1}}}`)
+		case "/bottest/getUpdates":
+			time.Sleep(10 * time.Millisecond)
+			fmt.Fprint(w, `{"ok":true,"result":[]}`)
+		default:
+			fmt.Fprint(w, `{"ok":true,"result":true}`)
+		}
+	}))
+	defer srv.Close()
+
+	b, err := NewBot(Config{Token: "test", AllowedUserIDs: []int64{42, 43}}, testLogger(), Handlers{})
+	if err != nil {
+		t.Fatalf("NewBot: %v", err)
+	}
+	b.bot.URL = srv.URL
+	b.connectBackoff = backoff{min: time.Millisecond, max: 4 * time.Millisecond}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- b.Run(ctx) }()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		mu.Lock()
+		n := len(gotChats)
+		mu.Unlock()
+		if n >= 2 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("анонс не дошёл до обоих юзеров из whitelist")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("Run() = %v, want nil", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if gotChats[0] != "42" || gotChats[1] != "43" {
+		t.Errorf("анонс ушёл чатам %v, want [42 43]", gotChats)
+	}
+	for i, ok := range gotMarkup {
+		if !ok {
+			t.Errorf("анонс #%d без reply-клавиатуры", i)
+		}
 	}
 }
 

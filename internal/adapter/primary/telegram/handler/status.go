@@ -28,8 +28,8 @@ func (h *Status) Handle(c tele.Context) error {
 
 	out, err := h.uc.Execute(ctx, status.GetStatusInput{})
 	if err != nil {
-		_ = c.Send("⚠ не удалось получить статус роутера")
+		_ = answer(c, "⚠ не удалось получить статус роутера")
 		return fmt.Errorf("/status: %w", err)
 	}
-	return c.Send(presenter.Status(out.Snapshot), tele.ModeHTML)
+	return answer(c, presenter.Status(out.Snapshot), tele.ModeHTML)
 }

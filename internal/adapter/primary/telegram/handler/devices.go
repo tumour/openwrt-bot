@@ -87,7 +87,7 @@ func (h *Devices) HandleList(c tele.Context) error {
 
 	out, err := h.list.Execute(ctx, device.ListInput{})
 	if err != nil {
-		_ = c.Send("⚠ не удалось получить список устройств")
+		_ = answer(c, "⚠ не удалось получить список устройств")
 		return fmt.Errorf("/list: %w", err)
 	}
 	return c.Send(presenter.ListHeader(len(out.Devices)), listMarkup(out.Devices), tele.ModeHTML)
