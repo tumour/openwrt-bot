@@ -1,4 +1,4 @@
-// Package nftables — реализация device.MACSetPort через утилиту `nft` (OpenWrt fw4).
+// Package nftables — реализация device.MACSetPort через утилиту `nft`.
 // Каждый Client работает с одним сетом MAC-адресов; правила, которые на сет
 // смотрят (drop для banned_macs, mark 0xff для vpn_direct_macs), создаёт
 // bootstrap в init.d, не бот.
@@ -16,12 +16,12 @@ import (
 	"github.com/tumour/openwrt-bot/internal/domain"
 )
 
-// Client управляет конкретным nftables-сетом (например `inet fw4 banned_macs`).
+// Client управляет конкретным nftables-сетом (например `inet openwrt_bot banned_macs`).
 // Table и Set вынесены в конструктор, чтобы можно было использовать с разными
 // firewall-сетапами (fw4, custom table) без правки кода.
 type Client struct {
 	runner system.Runner
-	table  string // "inet fw4"
+	table  string // "inet openwrt_bot"
 	set    string // "banned_macs"
 }
 

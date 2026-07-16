@@ -58,11 +58,13 @@ func run() error {
 	fileReader := system.NewOSFileReader()
 	ubusClient := ubus.NewClient(runner)
 	thermalClient := thermal.NewClient(fileReader, cfg.ThermalZonePath)
-	// Два nft-сета на одной таблице: бан-лист и vpn-обход. Правила, смотрящие
-	// на сеты (drop / mark 0xff), создаёт bootstrap в init.d, бот управляет
-	// только элементами.
-	nftBanned := nftables.NewClient(runner, "inet fw4", "banned_macs")
-	nftDirect := nftables.NewClient(runner, "inet fw4", "vpn_direct_macs")
+	// Два nft-сета в собственной таблице бота: бан-лист и vpn-обход. Правила,
+	// смотрящие на сеты (drop / mark 0xff), создаёт bootstrap в init.d, бот
+	// управляет только элементами. Таблица своя, а не inet fw4, потому что
+	// `fw4 reload` делает flush своей таблицы и вычищал бы правила (сеты
+	// выживали — бот показывал «забанен», а drop уже не работал).
+	nftBanned := nftables.NewClient(runner, "inet openwrt_bot", "banned_macs")
+	nftDirect := nftables.NewClient(runner, "inet openwrt_bot", "vpn_direct_macs")
 	// Лимиты скорости живут в отдельной netdev-таблице (policing на ingress/egress
 	// br-lan); скелет так же создаёт init.d, бот — только limit-объекты и элементы map.
 	nftLimits := nftables.NewRateLimiter(runner, "netdev openwrt_bot")

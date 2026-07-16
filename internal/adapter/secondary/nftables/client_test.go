@@ -26,7 +26,7 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) ([]byte
 }
 
 const (
-	testTable = "inet fw4"
+	testTable = "inet openwrt_bot"
 	testSet   = "banned_macs"
 )
 
@@ -38,7 +38,7 @@ func TestAdd_OK(t *testing.T) {
 	if err := c.Add(context.Background(), mac); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	wantArgs := []string{"add", "element", "inet fw4", "banned_macs", "{ aa:bb:cc:11:22:33 }"}
+	wantArgs := []string{"add", "element", "inet openwrt_bot", "banned_macs", "{ aa:bb:cc:11:22:33 }"}
 	if fr.gotName != "nft" || !equalArgs(fr.gotArgs, wantArgs) {
 		t.Errorf("cmd = %s %v, want nft %v", fr.gotName, fr.gotArgs, wantArgs)
 	}
@@ -86,8 +86,8 @@ func TestAdd_KeywordOutsideStderr_NotMapped(t *testing.T) {
 }
 
 func TestList_Parse(t *testing.T) {
-	// Реальный фрагмент `nft list set inet fw4 banned_macs`.
-	stub := []byte(`table inet fw4 {
+	// Реальный фрагмент `nft list set inet openwrt_bot banned_macs`.
+	stub := []byte(`table inet openwrt_bot {
 	set banned_macs {
 		type ether_addr
 		elements = { aa:bb:cc:11:22:33, 11:22:33:44:55:66 }
@@ -109,7 +109,7 @@ func TestList_Parse(t *testing.T) {
 }
 
 func TestList_Empty(t *testing.T) {
-	stub := []byte(`table inet fw4 {
+	stub := []byte(`table inet openwrt_bot {
 	set banned_macs {
 		type ether_addr
 		elements = {  }
